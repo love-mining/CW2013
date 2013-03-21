@@ -1,4 +1,4 @@
-AICW2013
+CW2013
 ========
 
-coursework for AI, 2013.02-2013.04
+coursework code in 2013
