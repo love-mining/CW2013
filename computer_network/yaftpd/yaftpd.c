@@ -31,6 +31,7 @@ typedef struct _yaftpd_state_t
     int listen_fd;
     int inst_conn_fd;
     struct sockaddr saddr;
+    const char *username;
 }   yaftpd_state_t;
 
 /* SIGCHLD shall be handled or terminated child processes would remain zombie */
@@ -41,6 +42,44 @@ static void sig_chld_hndl(int signo)
         warn("error waiting for child process");
     return;
 }
+
+static void yaftpd_send_str(const char *msg, const yaftpd_state_t *yaftpd_state)
+{
+    int msglen = strlen(msg);
+    send(yaftpd_state->inst_conn_fd, msg, msglen + 1, 0);
+    return;
+}
+
+static void session_response_user(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char username[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "USER %s", username) < 1)
+        yaftpd_send_str("501 Syntax error.\r\n", yaftpd_state);
+    else
+    {
+        if (1) // TODO: validation passed. 
+        {
+            yaftpd_state->username = strdup(username);
+            yaftpd_send_str("331 User name okay, need password.\r\n", yaftpd_state);
+        }
+        else
+        {
+            // TODO: validation failed.
+        }
+    }
+    return;
+}
+
+typedef struct _session_response_t
+{
+    const char *instname;
+    void (*handler)(const char*, yaftpd_state_t*);
+}   session_response_t;
+
+static const session_response_t session_response[] = {
+    { "USER", session_response_user },
+    { NULL, NULL },
+};
 
 static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
 {
@@ -93,13 +132,29 @@ static void socket_init(yaftpd_state_t *yaftpd_state)
 static void yaftpd_session(yaftpd_state_t *yaftpd_state)
 {
     yaftpd_config_t *yaftpd_config = yaftpd_state->config;
-    int welcome_len = strlen(yaftpd_config->welcome_message);
-    send(yaftpd_state->inst_conn_fd, yaftpd_config->welcome_message, welcome_len, 0);
+    yaftpd_send_str(yaftpd_config->welcome_message, yaftpd_state);
 
-    char buff[yaftpd_config->inst_buffer_size];
-    int msglen;
-    while (msglen = recv(yaftpd_state->inst_conn_fd, buff, yaftpd_config->inst_buffer_size, 0) > 0)
-        puts(buff);
+    char instbuff[yaftpd_config->inst_buffer_size];
+    int inst_msg_len;
+    while (inst_msg_len = recv(yaftpd_state->inst_conn_fd, instbuff, yaftpd_config->inst_buffer_size, 0))
+    {
+        /* assuming the maximum instruction size is no more than inst_buffer_size */
+        if (inst_msg_len == yaftpd_config->inst_buffer_size)
+            fprintf(stderr, "%s: Maximum instruction size exceeded.", program_invocation_short_name);
+
+        /* a naive parsing routine. shall use flex+bison instead. */
+        int i;
+        const session_response_t *sp;
+        for (i = 0; sp = &session_response[i], sp->instname; i++)
+            if (!strncasecmp(sp->instname, instbuff, strlen(sp->instname)))
+                sp->handler(instbuff, yaftpd_state);
+        if (!sp->instname) /* not parsed */
+            yaftpd_send_str("502 Command not implemneted.\r\n", yaftpd_state);
+            
+        printf("inst_msg len: %d\n", inst_msg_len);
+        if (inst_msg_len > 0)
+            puts(instbuff);
+    }
     return;
 }
 
