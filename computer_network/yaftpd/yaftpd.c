@@ -5,12 +5,14 @@
  * */
 
 #define _GNU_SOURCE
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <libconfig.h>
 #include <err.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,10 +54,15 @@ static void onexit()
     return;
 }
 
-static void yaftpd_send_str(const char *msg, const yaftpd_state_t *yaftpd_state)
+static void yaftpd_send_fmtstr(const yaftpd_state_t *yaftpd_state, const char *fmt, ...)
 {
+    va_list args;
+    char *msg;
+    va_start(args, fmt);
+    vasprintf(&msg, fmt, args);
     int msglen = strlen(msg);
     send(yaftpd_state->inst_conn_fd, msg, msglen + 1, 0);
+    free(msg);
     return;
 }
 
@@ -76,13 +83,13 @@ static void session_response_user(const char *instruction, yaftpd_state_t *yaftp
 {
     char username[yaftpd_state->config->inst_buffer_size];
     if (sscanf(instruction, "USER %s", username) < 1)
-        yaftpd_send_str("501 Syntax error.\r\n", yaftpd_state);
+        yaftpd_send_fmtstr(yaftpd_state, "501 Syntax error.\r\n");
     else
     {
         if (yaftpd_username_validate(username, yaftpd_state)) 
         {
             yaftpd_state->username = strdup(username);
-            yaftpd_send_str("331 User name okay, need password.\r\n", yaftpd_state);
+            yaftpd_send_fmtstr(yaftpd_state, "331 User name okay, need password.\r\n");
         }
         else
         {
@@ -107,16 +114,36 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
 {
     char password[yaftpd_state->config->inst_buffer_size];
     if (sscanf(instruction, "PASS %s", password) < 1)
-        yaftpd_send_str("501 Syntax error.\r\n", yaftpd_state);
+        yaftpd_send_fmtstr(yaftpd_state, "501 Syntax error.\r\n");
     else
     {
         if (!yaftpd_state->username)
-            yaftpd_send_str("503: Login with USER first.\r\n", yaftpd_state);
+            yaftpd_send_fmtstr(yaftpd_state, "503: Login with USER first.\r\n");
         else if (yaftpd_password_validate(password, yaftpd_state))
-            yaftpd_send_str("230: User logged in, proceed.\r\n", yaftpd_state);
+        {
+            if (!strcasecmp(yaftpd_state->username, "anonymous"))
+            {
+                chdir(yaftpd_state->config->anonymous_root);
+                chroot(yaftpd_state->config->anonymous_root);
+                umask(yaftpd_state->config->anonymous_mask);
+            }
+            else
+            {
+                /* TODO: chroot for normal users */
+            }
+            yaftpd_send_fmtstr(yaftpd_state, "230: User logged in, proceed.\r\n");
+        }
         else
-            yaftpd_send_str("530: Authentication failed.\r\n", yaftpd_state);
+            yaftpd_send_fmtstr(yaftpd_state, "530: Authentication failed.\r\n");
     }
+    return;
+}
+
+static void session_response_pwd(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char *pwd = get_current_dir_name();
+    yaftpd_send_fmtstr(yaftpd_state, "257 \"%s\"\r\n", pwd);
+    free(pwd);
     return;
 }
 
@@ -127,9 +154,10 @@ typedef struct _session_response_t
 }   session_response_t;
 
 static const session_response_t session_response[] = {
-    { "USER", session_response_user },
-    { "PASS", session_response_pass },
-    { NULL, NULL },
+    { "USER",   session_response_user },
+    { "PASS",   session_response_pass },
+    { "PWD",    session_response_pwd },
+    { NULL,     NULL },
 };
 
 static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
@@ -194,7 +222,7 @@ static void socket_init(yaftpd_state_t *yaftpd_state)
 static void yaftpd_session(yaftpd_state_t *yaftpd_state)
 {
     yaftpd_config_t *yaftpd_config = yaftpd_state->config;
-    yaftpd_send_str(yaftpd_config->welcome_message, yaftpd_state);
+    yaftpd_send_fmtstr(yaftpd_state, yaftpd_config->welcome_message);
 
     char instbuff[yaftpd_config->inst_buffer_size];
     int inst_msg_len;
@@ -215,7 +243,7 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
                 break;
             }
         if (!sp->instname) /* not parsed */
-            yaftpd_send_str("502 Command not implemneted.\r\n", yaftpd_state);
+            yaftpd_send_fmtstr(yaftpd_state, "502 Command not implemneted.\r\n");
             
         printf("inst_msg len: %d\n", inst_msg_len);
         if (inst_msg_len > 0)
