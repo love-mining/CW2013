@@ -23,6 +23,9 @@ typedef struct _yaftpd_config_t
     const char *welcome_message;
     int listen_queue_size;
     int inst_buffer_size;
+    int anonymous_login;
+    int anonymous_mask;
+    const char *anonymous_root;
 }   yaftpd_config_t;
 
 typedef struct _yaftpd_state_t
@@ -50,6 +53,19 @@ static void yaftpd_send_str(const char *msg, const yaftpd_state_t *yaftpd_state)
     return;
 }
 
+static int yaftpd_username_validate(const char *username, yaftpd_state_t *yaftpd_state)
+{
+    if (yaftpd_state->config->anonymous_login && !strcasecmp(username, "anonymous"))
+    {
+        return 1;
+    }
+    else
+    {
+        /* TODO: general username validate. check if inside ftp group */
+    }
+    return 0;
+}
+
 static void session_response_user(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
     char username[yaftpd_state->config->inst_buffer_size];
@@ -57,7 +73,7 @@ static void session_response_user(const char *instruction, yaftpd_state_t *yaftp
         yaftpd_send_str("501 Syntax error.\r\n", yaftpd_state);
     else
     {
-        if (1) // TODO: validation passed. 
+        if (yaftpd_username_validate(username, yaftpd_state)) 
         {
             yaftpd_state->username = strdup(username);
             yaftpd_send_str("331 User name okay, need password.\r\n", yaftpd_state);
@@ -70,6 +86,17 @@ static void session_response_user(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static int yaftpd_password_validate(const char *password, yaftpd_state_t *yaftpd_state)
+{
+    if (yaftpd_state->config->anonymous_login && !strcasecmp(yaftpd_state->username, "anonymous"))
+        return 1;
+    else
+    {
+        /* TODO: general password validate. check with getspnam and getpwnam */
+    }
+    return 0;
+}
+
 static void session_response_pass(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
     char password[yaftpd_state->config->inst_buffer_size];
@@ -79,7 +106,7 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
     {
         if (!yaftpd_state->username)
             yaftpd_send_str("503: Login with USER first.\r\n", yaftpd_state);
-        else if (1) // TODO: validation passed
+        else if (yaftpd_password_validate(password, yaftpd_state))
             yaftpd_send_str("230: User logged in, proceed.\r\n", yaftpd_state);
         else
             yaftpd_send_str("530: Authentication failed.\r\n", yaftpd_state);
@@ -105,27 +132,35 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     config_t _cfg, *cfg = &_cfg;
     config_init(cfg);
     if (config_read_file(cfg, filename) == CONFIG_FALSE)
-        goto FAIL_EXIT;
+    {
+        fprintf(stderr, "%s: Failed reading line %d in config file %s: %s\n",
+            program_invocation_short_name, 
+            config_error_line(cfg),
+            config_error_file(cfg),
+            config_error_text(cfg));
+        exit(1);
+    }
 
-    if (config_lookup_int(cfg, "port", &config->port) == CONFIG_FALSE)
-        goto FAIL_EXIT;
-    if (config_lookup_string(cfg, "welcome_message", &config->welcome_message) == CONFIG_FALSE)
-        goto FAIL_EXIT;
-    if (config_lookup_int(cfg, "listen_queue_size", &config->listen_queue_size) == CONFIG_FALSE)
-        goto FAIL_EXIT;
-    if (config_lookup_int(cfg, "inst_buffer_size", &config->inst_buffer_size) == CONFIG_FALSE)
-        goto FAIL_EXIT;
+#define YAFTPD_CONFIG_LOOKUP(type, name)    \
+    if (config_lookup_##type(cfg, #name, &config->name) == CONFIG_FALSE)  \
+    {   \
+        fprintf(stderr, "%s: Failed reading configuration item: %s\n",  \
+            program_invocation_short_name, #name); \
+        exit(1);    \
+    }   \
+    if (!strcmp(#type, "string"))   \
+        *(const char**)&config->name = strdup(*(const char**)&config->name);
+        
+    YAFTPD_CONFIG_LOOKUP(int, port);
+    YAFTPD_CONFIG_LOOKUP(string, welcome_message);
+    YAFTPD_CONFIG_LOOKUP(int, listen_queue_size);
+    YAFTPD_CONFIG_LOOKUP(int, inst_buffer_size);
+    YAFTPD_CONFIG_LOOKUP(bool, anonymous_login);
+    YAFTPD_CONFIG_LOOKUP(int, anonymous_mask);
+    YAFTPD_CONFIG_LOOKUP(string, anonymous_root);
+#undef YAFTPD_CONFIG_LOOKUP
 
     config_destroy(cfg);
-    return;
-
-FAIL_EXIT:
-    fprintf(stderr, "%s: Failed reading line %d in config file %s: %s\n",
-        program_invocation_short_name, 
-        config_error_line(cfg),
-        config_error_file(cfg),
-        config_error_text(cfg));
-    exit(1);
     return;
 }
 
