@@ -147,6 +147,23 @@ static void session_response_pwd(const char *instruction, yaftpd_state_t *yaftpd
     return;
 }
 
+static void session_response_type(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char typecode;
+    if (sscanf(instruction, "TYPE %c", &typecode) < 1)
+        yaftpd_send_fmtstr(yaftpd_state, "501 Syntax error.\r\n");
+    switch(typecode)
+    {
+    case 'I':   /* Image(binary files) */
+        yaftpd_send_fmtstr(yaftpd_state, "200 Command okay.");
+        break;
+    deafault:   /* not impelmented */
+        yaftpd_send_fmtstr(yaftpd_state, "504 Command not impelmented for that parameter.");
+        break;
+    }
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -157,6 +174,7 @@ static const session_response_t session_response[] = {
     { "USER",   session_response_user },
     { "PASS",   session_response_pass },
     { "PWD",    session_response_pwd },
+    { "TYPE",   session_response_type },
     { NULL,     NULL },
 };
 
