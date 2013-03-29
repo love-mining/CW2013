@@ -46,6 +46,12 @@ static void sig_chld_hndl(int signo)
     return;
 }
 
+static void onexit()
+{
+    printf("aha\n");
+    return;
+}
+
 static void yaftpd_send_str(const char *msg, const yaftpd_state_t *yaftpd_state)
 {
     int msglen = strlen(msg);
@@ -133,7 +139,7 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     config_init(cfg);
     if (config_read_file(cfg, filename) == CONFIG_FALSE)
     {
-        fprintf(stderr, "%s: Failed reading line %d in config file %s: %s\n",
+        fprintf(stderr, "%s: error reading line %d in config file %s: %s\n",
             program_invocation_short_name, 
             config_error_line(cfg),
             config_error_file(cfg),
@@ -144,7 +150,7 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
 #define YAFTPD_CONFIG_LOOKUP(type, name)    \
     if (config_lookup_##type(cfg, #name, &config->name) == CONFIG_FALSE)  \
     {   \
-        fprintf(stderr, "%s: Failed reading configuration item: %s\n",  \
+        fprintf(stderr, "%s: error reading configuration item: %s\n",  \
             program_invocation_short_name, #name); \
         exit(1);    \
     }   \
@@ -169,16 +175,19 @@ static void socket_init(yaftpd_state_t *yaftpd_state)
     yaftpd_config_t *yaftpd_config = yaftpd_state->config;
     yaftpd_state->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (yaftpd_state->listen_fd < 0)
-        err(1, "Failed to create socket");
+        err(1, "error creating socket");
+    int tmpint = 1;
+    if (setsockopt(yaftpd_state->listen_fd, SOL_SOCKET, SO_REUSEADDR, &tmpint, sizeof(tmpint)) < 0)
+        err(1, "error setting socket reuse");
     struct sockaddr_in servaddr = {
         .sin_family = AF_INET,
         .sin_addr.s_addr = htonl(INADDR_ANY),
         .sin_port = htons(yaftpd_config->port),
     };
     if (bind(yaftpd_state->listen_fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
-        err(1, "Failed to bind socket");
+        err(1, "error binding socket");
     if (listen(yaftpd_state->listen_fd, yaftpd_config->listen_queue_size) < 0)
-        err(1, "Failed to listen to socket");
+        err(1, "error listening to socket");
     return;
 }
 
@@ -193,7 +202,7 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
     {
         /* assuming the maximum instruction size is no more than inst_buffer_size */
         if (inst_msg_len == yaftpd_config->inst_buffer_size)
-            fprintf(stderr, "%s: Maximum instruction size exceeded.", program_invocation_short_name);
+            fprintf(stderr, "%s: warning: Maximum instruction size exceeded.", program_invocation_short_name);
         instbuff[inst_msg_len] = 0; /* manually added \0 for c strings */
 
         /* a naive parsing routine. shall use flex+bison instead. */
@@ -216,7 +225,13 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
 }
 
 int main(int argc, char **argv)
-{
+{   
+    atexit(onexit);
+    /* to work with chroot jail we need root privilege,
+     * also when the port number is less than 1024 it requires root */
+    if (chroot("/") < 0)
+        err(1, "requires root to work");
+
     yaftpd_config_t _config = { };
     yaftpd_state_t _yaftpd_state = { .config = &_config }, *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
@@ -229,7 +244,7 @@ int main(int argc, char **argv)
         /* this would block until an incoming connection */
         yaftpd_state->inst_conn_fd = accept(yaftpd_state->listen_fd, &yaftpd_state->saddr, &saddr_len);
         if (yaftpd_state->inst_conn_fd < 0)
-            err(1, "Failed to accept connection");
+            err(1, "error accepting connection");
         pid_t pid = fork();
         if (pid == 0)
         {
@@ -248,14 +263,13 @@ int main(int argc, char **argv)
         else
         {
             /* Failed to fork */
-            warn("Failed to fork");
+            warn("error forking");
             close(yaftpd_state->inst_conn_fd);
         }
-    
     }
 
     /* execution flow shall not reach here */
-    err(1, "This line shall not be executed");
+    err(1, "this line shall not be executed");
 
     return 0;
 }
