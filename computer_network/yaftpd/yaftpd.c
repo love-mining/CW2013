@@ -118,7 +118,7 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
     else
     {
         if (!yaftpd_state->username)
-            yaftpd_send_fmtstr(yaftpd_state, "503: Login with USER first.\r\n");
+            yaftpd_send_fmtstr(yaftpd_state, "503 Login with USER first.\r\n");
         else if (yaftpd_password_validate(password, yaftpd_state))
         {
             if (!strcasecmp(yaftpd_state->username, "anonymous"))
@@ -131,10 +131,10 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
             {
                 /* TODO: chroot for normal users */
             }
-            yaftpd_send_fmtstr(yaftpd_state, "230: User logged in, proceed.\r\n");
+            yaftpd_send_fmtstr(yaftpd_state, "230 User logged in, proceed.\r\n");
         }
         else
-            yaftpd_send_fmtstr(yaftpd_state, "530: Authentication failed.\r\n");
+            yaftpd_send_fmtstr(yaftpd_state, "530 Authentication failed.\r\n");
     }
     return;
 }
