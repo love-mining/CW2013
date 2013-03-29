@@ -70,6 +70,23 @@ static void session_response_user(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_pass(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char password[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "PASS %s", password) < 1)
+        yaftpd_send_str("501 Syntax error.\r\n", yaftpd_state);
+    else
+    {
+        if (!yaftpd_state->username)
+            yaftpd_send_str("503: Login with USER first.\r\n", yaftpd_state);
+        else if (1) // TODO: validation passed
+            yaftpd_send_str("230: User logged in, proceed.\r\n", yaftpd_state);
+        else
+            yaftpd_send_str("530: Authentication failed.\r\n", yaftpd_state);
+    }
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -78,6 +95,7 @@ typedef struct _session_response_t
 
 static const session_response_t session_response[] = {
     { "USER", session_response_user },
+    { "PASS", session_response_pass },
     { NULL, NULL },
 };
 
@@ -141,13 +159,17 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
         /* assuming the maximum instruction size is no more than inst_buffer_size */
         if (inst_msg_len == yaftpd_config->inst_buffer_size)
             fprintf(stderr, "%s: Maximum instruction size exceeded.", program_invocation_short_name);
+        instbuff[inst_msg_len] = 0; /* manually added \0 for c strings */
 
         /* a naive parsing routine. shall use flex+bison instead. */
         int i;
         const session_response_t *sp;
         for (i = 0; sp = &session_response[i], sp->instname; i++)
             if (!strncasecmp(sp->instname, instbuff, strlen(sp->instname)))
+            {
                 sp->handler(instbuff, yaftpd_state);
+                break;
+            }
         if (!sp->instname) /* not parsed */
             yaftpd_send_str("502 Command not implemneted.\r\n", yaftpd_state);
             
