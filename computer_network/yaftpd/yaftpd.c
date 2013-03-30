@@ -48,12 +48,6 @@ static void sig_chld_hndl(int signo)
     return;
 }
 
-static void onexit()
-{
-    printf("aha\n");
-    return;
-}
-
 static void yaftpd_send_fmtstr(const yaftpd_state_t *yaftpd_state, const char *fmt, ...)
 {
     va_list args;
@@ -92,9 +86,7 @@ static void session_response_user(const char *instruction, yaftpd_state_t *yaftp
             yaftpd_send_fmtstr(yaftpd_state, "331 User name okay, need password.\r\n");
         }
         else
-        {
-            // TODO: validation failed.
-        }
+            yaftpd_send_fmtstr(yaftpd_state, "530 Invalid user name.\r\n");
     }
     return;
 }
@@ -272,7 +264,6 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
 
 int main(int argc, char **argv)
 {   
-    atexit(onexit);
     /* to work with chroot jail we need root privilege,
      * also when the port number is less than 1024 it requires root */
     if (chroot("/") < 0)
