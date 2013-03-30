@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <libconfig.h>
 #include <err.h>
 #include <errno.h>
@@ -17,11 +18,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define EOL "\r\n"
-
 typedef struct _yaftpd_config_t
 {
-    int port;
+    int inst_port;
+    int data_port;
     const char *welcome_message;
     int listen_queue_size;
     int inst_buffer_size;
@@ -147,12 +147,27 @@ static void session_response_type(const char *instruction, yaftpd_state_t *yaftp
     switch(typecode)
     {
     case 'I':   /* Image(binary files) */
-        yaftpd_send_fmtstr(yaftpd_state, "200 Command okay.");
+        yaftpd_send_fmtstr(yaftpd_state, "200 Command okay.\r\n");
         break;
     deafault:   /* not impelmented */
-        yaftpd_send_fmtstr(yaftpd_state, "504 Command not impelmented for that parameter.");
+        yaftpd_send_fmtstr(yaftpd_state, "504 Command not impelmented for that parameter.\r\n");
         break;
     }
+    return;
+}
+
+static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    struct sockaddr_in addr;
+    int addrlen = sizeof(addr);
+    if (getsockname(yaftpd_state->inst_conn_fd, &addr, &addrlen))
+        warn("error getting socket name");
+    int iaddr[4];
+    sscanf(inet_ntoa(addr.sin_addr), "%d.%d.%d.%d", 
+        &iaddr[0], &iaddr[1], &iaddr[2], &iaddr[3]);
+    int port = yaftpd_state->config->data_port; 
+    yaftpd_send_fmtstr(yaftpd_state, "227 Entering passive mode (%d,%d,%d,%d,%d,%d)\r\n",
+        iaddr[0], iaddr[1], iaddr[2], iaddr[3], port >> 8, port & 255);
     return;
 }
 
@@ -167,6 +182,8 @@ static const session_response_t session_response[] = {
     { "PASS",   session_response_pass },
     { "PWD",    session_response_pwd },
     { "TYPE",   session_response_type },
+    { "PASV",   session_response_pasv },
+    // { "PORT",   NULL }, /* TODO: implement this */
     { NULL,     NULL },
 };
 
@@ -195,7 +212,8 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     if (!strcmp(#type, "string"))   \
         *(const char**)&config->name = strdup(*(const char**)&config->name);
         
-    YAFTPD_CONFIG_LOOKUP(int, port);
+    YAFTPD_CONFIG_LOOKUP(int, inst_port);
+    YAFTPD_CONFIG_LOOKUP(int, data_port);
     YAFTPD_CONFIG_LOOKUP(string, welcome_message);
     YAFTPD_CONFIG_LOOKUP(int, listen_queue_size);
     YAFTPD_CONFIG_LOOKUP(int, inst_buffer_size);
@@ -220,7 +238,7 @@ static void socket_init(yaftpd_state_t *yaftpd_state)
     struct sockaddr_in servaddr = {
         .sin_family = AF_INET,
         .sin_addr.s_addr = htonl(INADDR_ANY),
-        .sin_port = htons(yaftpd_config->port),
+        .sin_port = htons(yaftpd_config->inst_port),
     };
     if (bind(yaftpd_state->listen_fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
         err(1, "error binding socket");
