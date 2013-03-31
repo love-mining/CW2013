@@ -102,7 +102,8 @@ static void socket_send_fmtstr(int conn_fd, const char *fmt, ...)
     va_start(args, fmt);
     vasprintf(&msg, fmt, args);
     int msglen = strlen(msg);
-    send(conn_fd, msg, msglen, 0);
+    if (send(conn_fd, msg, msglen, 0) == -1)
+        warn("error sending formatted message to socket");
     free(msg);
     return;
 }
@@ -150,7 +151,7 @@ static int yaftpd_username_validate(const char *username, yaftpd_state_t *yaftpd
 static void session_response_user(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
     char username[yaftpd_state->config->inst_buffer_size];
-    if (sscanf(instruction, "USER %s", username) < 1)
+    if (sscanf(instruction, "USER %[^\r]", username) < 1)
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
     else
     {
@@ -179,7 +180,7 @@ static int yaftpd_password_validate(const char *password, yaftpd_state_t *yaftpd
 static void session_response_pass(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
     char password[yaftpd_state->config->inst_buffer_size];
-    if (sscanf(instruction, "PASS %s", password) < 1)
+    if (sscanf(instruction, "PASS %[^\r]", password) < 1)
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
     else
     {
@@ -221,6 +222,7 @@ static void session_response_type(const char *instruction, yaftpd_state_t *yaftp
     switch(typecode)
     {
     case 'I':   /* Image(binary files) */
+    case 'A':   /* ASCII files */
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "200 Command okay.\r\n");
         break;
     deafault:   /* not impelmented */
@@ -251,16 +253,14 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
         &iaddr[0], &iaddr[1], &iaddr[2], &iaddr[3]);
     yaftpd_state->config->data_port = rand() % 32768 + 1024;
     int port = yaftpd_state->config->data_port; 
-    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "227 Entering passive mode (%d,%d,%d,%d,%d,%d)\r\n",
-        iaddr[0], iaddr[1], iaddr[2], iaddr[3], port >> 8, port & 255);
     yaftpd_state->data_conn_mode = YAFTPD_PASSIVE;
-
     if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->data_port, &yaftpd_state->data_listen_fd))
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open passive connection.\r\n");
         return;
     }
-    
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "227 Entering passive mode (%d,%d,%d,%d,%d,%d)\r\n",
+        iaddr[0], iaddr[1], iaddr[2], iaddr[3], port >> 8, port & 255);
     return;
 }
 
@@ -268,7 +268,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
 {
     char param[yaftpd_state->config->inst_buffer_size];
     char *target = param;
-    if (sscanf(instruction, "LIST %s", param) < 1)
+    if (sscanf(instruction, "LIST %[^\r]", param) < 1)
         target = "";
 
     if (yaftpd_setup_data_conn(yaftpd_state) < 0)
@@ -279,7 +279,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
 
     /* do the listing and send data */
     char *command;
-    asprintf(&command, "ls -la %s", target);
+    asprintf(&command, "ls -la \"%s\"", target);
     FILE *pfin = popen(command, "r");
 
     int line_size = yaftpd_state->config->listing_line_size;
@@ -303,7 +303,7 @@ static void session_response_cwd(const char *instruction, yaftpd_state_t *yaftpd
 {
     char param[yaftpd_state->config->inst_buffer_size];
     char *target = param;
-    if (sscanf(instruction, "CWD %s", param) < 1)
+    if (sscanf(instruction, "CWD %[^\r]", param) < 1)
         target = "/";
     if (chdir(target))
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 No such directory.\r\n");
@@ -317,7 +317,7 @@ static void session_response_retr(const char *instruction, yaftpd_state_t *yaftp
 {
     char param[yaftpd_state->config->inst_buffer_size];
     char *target = param;
-    if (sscanf(instruction, "RETR %s", param) < 1)
+    if (sscanf(instruction, "RETR %[^\r]", param) < 1)
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 Syntax error.\r\n");
         return;
