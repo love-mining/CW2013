@@ -201,6 +201,12 @@ static void session_response_type(const char *instruction, yaftpd_state_t *yaftp
 
 static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
+    if (yaftpd_state->data_listen_fd > 0)
+    {
+        close(yaftpd_state->data_listen_fd);
+        yaftpd_state->data_listen_fd = -1;
+    }
+
     struct sockaddr_in addr;
     int addrlen = sizeof(addr);
     if (getsockname(yaftpd_state->inst_conn_fd, &addr, &addrlen))
@@ -212,14 +218,12 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
     int iaddr[4];
     sscanf(inet_ntoa(addr.sin_addr), "%d.%d.%d.%d", 
         &iaddr[0], &iaddr[1], &iaddr[2], &iaddr[3]);
-    //yaftpd_state->config->data_port = rand() % 32768 + 1024;
+    yaftpd_state->config->data_port = rand() % 32768 + 1024;
     int port = yaftpd_state->config->data_port; 
     socket_send_fmtstr(yaftpd_state->inst_conn_fd, "227 Entering passive mode (%d,%d,%d,%d,%d,%d)\r\n",
         iaddr[0], iaddr[1], iaddr[2], iaddr[3], port >> 8, port & 255);
     yaftpd_state->data_conn_mode = YAFTPD_PASSIVE;
 
-    if (yaftpd_state->data_listen_fd > 0)
-        close(yaftpd_state->data_listen_fd);
     if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->data_port, &yaftpd_state->data_listen_fd))
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open passive connection.\r\n");
@@ -246,6 +250,11 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     }
     else if (yaftpd_state->data_conn_mode == YAFTPD_PASSIVE)
     {
+        if (yaftpd_state->data_listen_fd < 0)
+        {
+            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
+            return;
+        }
         struct sockaddr dsaddr;        
         int saddr_len = sizeof(dsaddr);
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
