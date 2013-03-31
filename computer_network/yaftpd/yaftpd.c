@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <libconfig.h>
@@ -36,6 +38,7 @@ typedef struct _yaftpd_config_t
     int anonymous_mask;
     const char *anonymous_root;
     int listing_line_size;
+    int file_read_buffer_size;
 }   yaftpd_config_t;
 
 typedef struct _yaftpd_state_t
@@ -45,6 +48,7 @@ typedef struct _yaftpd_state_t
     int inst_conn_fd;
     int data_conn_mode;
     int data_listen_fd;
+    int data_conn_fd;
     struct sockaddr saddr;
     const char *username;
 }   yaftpd_state_t;
@@ -101,6 +105,33 @@ static void socket_send_fmtstr(int conn_fd, const char *fmt, ...)
     send(conn_fd, msg, msglen, 0);
     free(msg);
     return;
+}
+
+static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
+{
+    /* preparing the data connection */
+    if (yaftpd_state->data_conn_mode == YAFTPD_ACTIVE)
+    {
+        /* TODO: implement this */
+        /* this shall not happen for now */
+        err(1, "active mode not implmented yet");
+    }
+    else if (yaftpd_state->data_conn_mode == YAFTPD_PASSIVE)
+    {
+        if (yaftpd_state->data_listen_fd < 0)
+            return -1;
+        struct sockaddr dsaddr;        
+        int saddr_len = sizeof(dsaddr);
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
+        
+        /* this would block until an incoming connection */
+        yaftpd_state->data_conn_fd = accept(yaftpd_state->data_listen_fd, &dsaddr, &saddr_len);
+        if (yaftpd_state->data_conn_fd < 0)
+            return -1;
+    }
+    else
+        return -1;
+    return 0;
 }
 
 static int yaftpd_username_validate(const char *username, yaftpd_state_t *yaftpd_state)
@@ -240,39 +271,12 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     if (sscanf(instruction, "LIST %s", param) < 1)
         target = "";
 
-    int data_conn_fd;
-    /* preparing the data connection */
-    if (yaftpd_state->data_conn_mode == YAFTPD_ACTIVE)
+    if (yaftpd_setup_data_conn(yaftpd_state) < 0)
     {
-        /* TODO: implement this */
-        /* this shall not happen for now */
-        err(1, "active mode not implmented yet");
-    }
-    else if (yaftpd_state->data_conn_mode == YAFTPD_PASSIVE)
-    {
-        if (yaftpd_state->data_listen_fd < 0)
-        {
-            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
-            return;
-        }
-        struct sockaddr dsaddr;        
-        int saddr_len = sizeof(dsaddr);
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
-        
-        /* this would block until an incoming connection */
-        data_conn_fd = accept(yaftpd_state->data_listen_fd, &dsaddr, &saddr_len);
-        if (data_conn_fd < 0)
-        {
-            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
-            return;
-        }
-    }
-    else
-    {
-        /* data transfer mode not specified. */
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
+        return;
     }
-        
+
     /* do the listing and send data */
     char *command;
     asprintf(&command, "ls -la %s", target);
@@ -285,11 +289,11 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     while (fgets(listing_line, line_size, pfin))
     {
         listing_line[strlen(listing_line) - 1] = 0; /* overwrite the newline */
-        socket_send_fmtstr(data_conn_fd, "%s\r\n", listing_line);
+        socket_send_fmtstr(yaftpd_state->data_conn_fd, "%s\r\n", listing_line);
     }
 
-    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Closing data connection.\r\n");
-    close(data_conn_fd);
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Listing complete.\r\n");
+    close(yaftpd_state->data_conn_fd);
     pclose(pfin);
     free(command);
     return;
@@ -301,12 +305,44 @@ static void session_response_cwd(const char *instruction, yaftpd_state_t *yaftpd
     char *target = param;
     if (sscanf(instruction, "CWD %s", param) < 1)
         target = "/";
-
     if (chdir(target))
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 No such directory.\r\n");
     else
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Command okay.\r\n");
 
+    return;
+}
+
+static void session_response_retr(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    char *target = param;
+    if (sscanf(instruction, "RETR %s", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 Syntax error.\r\n");
+        return;
+    }
+    int inputfd = open(param, O_RDONLY);
+    if (inputfd == -1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 %s.\r\n", strerror(errno));
+        return;
+    }
+    if (yaftpd_setup_data_conn(yaftpd_state) < 0)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
+        return;
+    }
+
+    int buffsz = yaftpd_state->config->file_read_buffer_size;
+    char buf[buffsz];
+    int readsz;
+    while ((readsz = read(inputfd, buf, buffsz)) > 0)
+        send(yaftpd_state->data_conn_fd, buf, readsz, 0);
+    if (readsz == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 %s.\r\n", strerror(errno));
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Transfer complete.\r\n");
+    close(yaftpd_state->data_conn_fd);
     return;
 }
 
@@ -325,6 +361,7 @@ static const session_response_t session_response[] = {
     // { "PORT",   NULL }, /* TODO: implement this */
     { "LIST",   session_response_list },
     { "CWD",    session_response_cwd },
+    { "RETR",   session_response_retr },
     { NULL,     NULL },
 };
 
@@ -362,6 +399,7 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     YAFTPD_CONFIG_LOOKUP(int, anonymous_mask);
     YAFTPD_CONFIG_LOOKUP(string, anonymous_root);
     YAFTPD_CONFIG_LOOKUP(int, listing_line_size);
+    YAFTPD_CONFIG_LOOKUP(int, file_read_buffer_size);
 #undef YAFTPD_CONFIG_LOOKUP
 
     config_destroy(cfg);
