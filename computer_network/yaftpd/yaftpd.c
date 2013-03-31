@@ -151,7 +151,7 @@ static int yaftpd_username_validate(const char *username, yaftpd_state_t *yaftpd
 static void session_response_user(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
     char username[yaftpd_state->config->inst_buffer_size];
-    if (sscanf(instruction, "USER %[^\r]", username) < 1)
+    if (sscanf(instruction, "USER %[^\r\n]", username) < 1)
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
     else
     {
@@ -269,7 +269,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     char param[yaftpd_state->config->inst_buffer_size];
     char *target = param;
     if (sscanf(instruction, "LIST %[^\r]", param) < 1)
-        target = "";
+        target = NULL;
 
     if (yaftpd_setup_data_conn(yaftpd_state) < 0)
     {
@@ -279,7 +279,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
 
     /* do the listing and send data */
     char *command;
-    asprintf(&command, "ls -la \"%s\"", target);
+    asprintf(&command, target ? "ls -la \"%s\"" : "ls -la", target);
     FILE *pfin = popen(command, "r");
 
     int line_size = yaftpd_state->config->listing_line_size;
