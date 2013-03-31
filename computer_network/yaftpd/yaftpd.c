@@ -72,7 +72,7 @@ static int socket_listen(yaftpd_state_t *yaftpd_state, int inaddr, int port, int
     {
         warn("error setting socket reuse");
         return -1;
-        }
+    }
     struct sockaddr_in servaddr = {
         .sin_family = AF_INET,
         .sin_addr.s_addr = htonl(inaddr),
@@ -212,6 +212,7 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
     int iaddr[4];
     sscanf(inet_ntoa(addr.sin_addr), "%d.%d.%d.%d", 
         &iaddr[0], &iaddr[1], &iaddr[2], &iaddr[3]);
+    //yaftpd_state->config->data_port = rand() % 32768 + 1024;
     int port = yaftpd_state->config->data_port; 
     socket_send_fmtstr(yaftpd_state->inst_conn_fd, "227 Entering passive mode (%d,%d,%d,%d,%d,%d)\r\n",
         iaddr[0], iaddr[1], iaddr[2], iaddr[3], port >> 8, port & 255);
@@ -246,6 +247,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
         struct sockaddr dsaddr;        
         int saddr_len = sizeof(dsaddr);
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
+        
         /* this would block until an incoming connection */
         data_conn_fd = accept(data_listen_fd, &dsaddr, &saddr_len);
         if (data_conn_fd < 0)
@@ -284,6 +286,21 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_cwd(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    char *target = param;
+    if (sscanf(instruction, "CWD %s", param) < 1)
+        target = "/";
+
+    if (chdir(target))
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 No such directory.\r\n");
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Command okay.\r\n");
+
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -298,6 +315,7 @@ static const session_response_t session_response[] = {
     { "PASV",   session_response_pasv },
     // { "PORT",   NULL }, /* TODO: implement this */
     { "LIST",   session_response_list },
+    { "CWD",    session_response_cwd },
     { NULL,     NULL },
 };
 
