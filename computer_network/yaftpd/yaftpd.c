@@ -39,6 +39,7 @@ typedef struct _yaftpd_config_t
     const char *anonymous_root;
     int listing_line_size;
     int file_read_buffer_size;
+    int data_listener_retry;
 }   yaftpd_config_t;
 
 typedef struct _yaftpd_state_t
@@ -123,12 +124,12 @@ static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
             return -1;
         struct sockaddr dsaddr;        
         int saddr_len = sizeof(dsaddr);
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
         
         /* this would block until an incoming connection */
         yaftpd_state->data_conn_fd = accept(yaftpd_state->data_listen_fd, &dsaddr, &saddr_len);
         if (yaftpd_state->data_conn_fd < 0)
             return -1;
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
     }
     else
         return -1;
@@ -240,6 +241,20 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
         yaftpd_state->data_listen_fd = -1;
     }
 
+    yaftpd_state->data_conn_mode = YAFTPD_PASSIVE;
+    int i;
+    for (i = 0; i < yaftpd_state->config->data_listener_retry; i++)
+    {
+        yaftpd_state->config->data_port = rand() % 32768 + 1024;
+        if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->data_port, &yaftpd_state->data_listen_fd) >= 0)
+            break;
+    }
+    if (i == yaftpd_state->config->data_listener_retry)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open passive connection.\r\n");
+        return;
+    }
+    
     struct sockaddr_in addr;
     int addrlen = sizeof(addr);
     if (getsockname(yaftpd_state->inst_conn_fd, &addr, &addrlen))
@@ -251,14 +266,7 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
     int iaddr[4];
     sscanf(inet_ntoa(addr.sin_addr), "%d.%d.%d.%d", 
         &iaddr[0], &iaddr[1], &iaddr[2], &iaddr[3]);
-    yaftpd_state->config->data_port = rand() % 32768 + 1024;
     int port = yaftpd_state->config->data_port; 
-    yaftpd_state->data_conn_mode = YAFTPD_PASSIVE;
-    if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->data_port, &yaftpd_state->data_listen_fd))
-    {
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open passive connection.\r\n");
-        return;
-    }
     socket_send_fmtstr(yaftpd_state->inst_conn_fd, "227 Entering passive mode (%d,%d,%d,%d,%d,%d)\r\n",
         iaddr[0], iaddr[1], iaddr[2], iaddr[3], port >> 8, port & 255);
     return;
@@ -322,8 +330,8 @@ static void session_response_retr(const char *instruction, yaftpd_state_t *yaftp
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 Syntax error.\r\n");
         return;
     }
-    int inputfd = open(param, O_RDONLY);
-    if (inputfd == -1)
+    int retr_fd = open(param, O_RDONLY);
+    if (retr_fd == -1)
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 %s.\r\n", strerror(errno));
         return;
@@ -337,12 +345,58 @@ static void session_response_retr(const char *instruction, yaftpd_state_t *yaftp
     int buffsz = yaftpd_state->config->file_read_buffer_size;
     char buf[buffsz];
     int readsz;
-    while ((readsz = read(inputfd, buf, buffsz)) > 0)
-        send(yaftpd_state->data_conn_fd, buf, readsz, 0);
+    int sendret;
+    while ((readsz = read(retr_fd, buf, buffsz)) > 0)
+        if ((sendret = send(yaftpd_state->data_conn_fd, buf, readsz, 0)) == -1)
+            break;
     if (readsz == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "426 %s.\r\n", strerror(errno));
+    else if (sendret == -1)
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 %s.\r\n", strerror(errno));
-    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Transfer complete.\r\n");
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Transfer complete.\r\n");
     close(yaftpd_state->data_conn_fd);
+    close(retr_fd);
+    return;
+}
+
+static void session_response_stor(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    char *target = param;
+    if (sscanf(instruction, "STOR %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 Syntax error.\r\n");
+        return;
+    }
+
+    int stor_fd = open(param, O_WRONLY | O_CREAT);
+    if (stor_fd == -1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 %s.\r\n", strerror(errno));
+        return;
+    }
+    if (yaftpd_setup_data_conn(yaftpd_state) < 0)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
+        return;
+    }
+
+    int buffsz = yaftpd_state->config->file_read_buffer_size;
+    char buf[buffsz];
+    int readsz;
+    int writeret;
+    while ((readsz = recv(yaftpd_state->data_conn_fd, buf, buffsz, 0)) > 0)
+        if ((writeret = write(stor_fd, buf, readsz)) == -1)
+            break;
+    if (readsz == -1 && errno != ECONNRESET)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "426 %s.\r\n", strerror(errno));
+    else if (writeret == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 %s.\r\n", strerror(errno));
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Transfer complete.\r\n");
+    close(yaftpd_state->data_conn_fd);
+    close(stor_fd);
     return;
 }
 
@@ -362,6 +416,7 @@ static const session_response_t session_response[] = {
     { "LIST",   session_response_list },
     { "CWD",    session_response_cwd },
     { "RETR",   session_response_retr },
+    { "STOR",   session_response_stor },
     { NULL,     NULL },
 };
 
@@ -400,6 +455,7 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     YAFTPD_CONFIG_LOOKUP(string, anonymous_root);
     YAFTPD_CONFIG_LOOKUP(int, listing_line_size);
     YAFTPD_CONFIG_LOOKUP(int, file_read_buffer_size);
+    YAFTPD_CONFIG_LOOKUP(int, data_listener_retry);
 #undef YAFTPD_CONFIG_LOOKUP
 
     config_destroy(cfg);
@@ -434,9 +490,8 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
         if (!sp->instname) /* not parsed */
             socket_send_fmtstr(yaftpd_state->inst_conn_fd, "502 Command not implemneted.\r\n");
             
-        printf("inst_msg len: %d\n", inst_msg_len);
         if (inst_msg_len > 0)
-            puts(instbuff);
+            printf("%s", instbuff);
     }
     return;
 }
