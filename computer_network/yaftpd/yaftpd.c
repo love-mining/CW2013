@@ -10,7 +10,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <grp.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <libconfig.h>
@@ -20,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 enum _YAFTPD_DATA_CONN_MODE
 {
@@ -35,7 +39,6 @@ typedef struct _yaftpd_config_t
     int listen_queue_size;
     int inst_buffer_size;
     int anonymous_login;
-    int anonymous_mask;
     const char *anonymous_root;
     int listing_line_size;
     int file_read_buffer_size;
@@ -62,6 +65,48 @@ static void sig_chld_hndl(int signo)
         warn("error waiting for child process");
     return;
 }
+
+static inline char ftypelet(mode_t bits)
+{
+    if (S_ISREG (bits))
+        return '-';
+    if (S_ISDIR (bits))
+        return 'd';
+    if (S_ISBLK (bits))
+        return 'b';
+    if (S_ISCHR (bits))
+        return 'c';
+    if (S_ISLNK (bits))
+        return 'l';
+    if (S_ISFIFO (bits))
+        return 'p';
+    if (S_ISSOCK (bits))
+        return 's';
+    return '?';
+}
+
+static void filemodestring(mode_t mode, char *str)
+{
+    str[0] = ftypelet (mode);
+    str[1] = mode & S_IRUSR ? 'r' : '-';
+    str[2] = mode & S_IWUSR ? 'w' : '-';
+    str[3] = (mode & S_ISUID
+        ? (mode & S_IXUSR ? 's' : 'S')
+        : (mode & S_IXUSR ? 'x' : '-'));
+    str[4] = mode & S_IRGRP ? 'r' : '-';
+    str[5] = mode & S_IWGRP ? 'w' : '-';
+    str[6] = (mode & S_ISGID
+        ? (mode & S_IXGRP ? 's' : 'S')
+        : (mode & S_IXGRP ? 'x' : '-'));
+    str[7] = mode & S_IROTH ? 'r' : '-';
+    str[8] = mode & S_IWOTH ? 'w' : '-';
+    str[9] = (mode & S_ISVTX
+        ? (mode & S_IXOTH ? 't' : 'T')
+        : (mode & S_IXOTH ? 'x' : '-'));
+    str[10] = ' ';
+    str[11] = '\0';
+    return;
+}    
 
 static int socket_listen(yaftpd_state_t *yaftpd_state, int inaddr, int port, int *fd)
 {
@@ -189,16 +234,21 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
             socket_send_fmtstr(yaftpd_state->inst_conn_fd, "503 Login with USER first.\r\n");
         else if (yaftpd_password_validate(password, yaftpd_state))
         {
+            chdir(yaftpd_state->config->anonymous_root);
+            //chroot(yaftpd_state->config->anonymous_root);
+
+            const char *username = yaftpd_state->username;
             if (!strcasecmp(yaftpd_state->username, "anonymous"))
+                username = "ftp";
+            struct passwd *pw = getpwnam(username);
+            if (pw)
             {
-                chdir(yaftpd_state->config->anonymous_root);
-                //chroot(yaftpd_state->config->anonymous_root);
-                //umask(yaftpd_state->config->anonymous_mask);
+                seteuid(pw->pw_uid);
+                setegid(pw->pw_gid);
             }
             else
-            {
-                /* TODO: chroot for normal users */
-            }
+                warn("failed to get struct passwd");
+
             socket_send_fmtstr(yaftpd_state->inst_conn_fd, "230 User logged in, proceed.\r\n");
         }
         else
@@ -277,7 +327,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     char param[yaftpd_state->config->inst_buffer_size];
     char *target = param;
     if (sscanf(instruction, "LIST %[^\r]", param) < 1)
-        target = NULL;
+        target = ".";
 
     if (yaftpd_setup_data_conn(yaftpd_state) < 0)
     {
@@ -286,24 +336,73 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     }
 
     /* do the listing and send data */
-    char *command;
-    asprintf(&command, target ? "ls -la \"%s\"" : "ls -la", target);
-    FILE *pfin = popen(command, "r");
-
-    int line_size = yaftpd_state->config->listing_line_size;
-    char listing_line[line_size];
-    /* read the "total xx" line */
-    fgets(listing_line, line_size, pfin);
-    while (fgets(listing_line, line_size, pfin))
+    /* assuming the target is always a directory */
+    DIR *dir = opendir(target);
+    if (dir)
     {
-        listing_line[strlen(listing_line) - 1] = 0; /* overwrite the newline */
-        socket_send_fmtstr(yaftpd_state->data_conn_fd, "%s\r\n", listing_line);
-    }
+        struct dirent *dent;
+        while ((dent = readdir(dir)) != NULL)
+        {
+            struct stat statbuf;
+            char fpath[yaftpd_state->config->inst_buffer_size];
+            sprintf(fpath, "%s/%s", target, dent->d_name);
+            if (stat(fpath, &statbuf) == -1)
+            {
+                warn("failed to stat: %s", dent->d_name);
+                break;
+            }
+            char modestr[16];
+            filemodestring(statbuf.st_mode, modestr);
 
-    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Listing complete.\r\n");
+            struct passwd *pw = getpwuid(statbuf.st_uid);
+            if (!pw)
+            {
+                warn("failed to getpwuid %d", statbuf.st_uid);
+                break;
+            }
+            char *username = strdup(pw->pw_name);
+
+            struct group *gr = getgrgid(statbuf.st_gid);
+            if (!gr)
+            {
+                warn("failed to getgrgid %d", statbuf.st_gid);
+                break;
+            }
+            char *groupname = strdup(gr->gr_name);
+
+            char *mtime = strdup(ctime(&statbuf.st_mtime));
+            /* manually stripping the last new line */
+            mtime[strlen(mtime) - 1] = 0;
+ 
+            int mtimestr_sz = 16;
+            char mtimestr[mtimestr_sz];
+            strftime(mtimestr, mtimestr_sz, "%b %e  %Y", localtime(&statbuf.st_mtime));
+            
+            socket_send_fmtstr(yaftpd_state->data_conn_fd, 
+                "%s %d %s %s %lld %s %s\r\n",
+                modestr,
+                statbuf.st_nlink,
+                username,
+                groupname,
+                (unsigned long long)statbuf.st_size,
+                mtimestr,
+                dent->d_name
+                );
+            free(username);
+            free(groupname);
+        }
+        if (!dent)
+            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Listing complete.\r\n");
+        else
+            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 File listing failed.\r\n");
+        closedir(dir);
+    }
+    else
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 File listing failed: %s.\r\n", strerror(errno));
+    }
+    
     close(yaftpd_state->data_conn_fd);
-    pclose(pfin);
-    free(command);
     return;
 }
 
@@ -400,6 +499,21 @@ static void session_response_stor(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_feat(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    const char *featstr = 
+        "211-Features\r\n"
+        "211 End\r\n";
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, featstr);
+    return;
+}
+
+static void session_response_syst(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "215 UNIX: GLaDOS\r\n");
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -417,6 +531,8 @@ static const session_response_t session_response[] = {
     { "CWD",    session_response_cwd },
     { "RETR",   session_response_retr },
     { "STOR",   session_response_stor },
+    { "FEAT",   session_response_feat },
+    { "SYST",   session_response_syst },
     { NULL,     NULL },
 };
 
@@ -451,7 +567,6 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     YAFTPD_CONFIG_LOOKUP(int, listen_queue_size);
     YAFTPD_CONFIG_LOOKUP(int, inst_buffer_size);
     YAFTPD_CONFIG_LOOKUP(bool, anonymous_login);
-    YAFTPD_CONFIG_LOOKUP(int, anonymous_mask);
     YAFTPD_CONFIG_LOOKUP(string, anonymous_root);
     YAFTPD_CONFIG_LOOKUP(int, listing_line_size);
     YAFTPD_CONFIG_LOOKUP(int, file_read_buffer_size);

@@ -2,10 +2,10 @@
 # By Pengyu CHEN(cpy.prefers.you@gmail.com)
 # COPYLEFT, ALL WRONGS RESERVED.
 
-CC = gcc
-CCFLAG = -c -O2
+CC = gcc 
+CCFLAG = -g -c -O2
 LD = gcc
-LDFLAG = -lconfig -O2
+LDFLAG = -g -lconfig -O2
 
 #.PHONY: clean
 
