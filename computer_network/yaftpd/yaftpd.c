@@ -58,6 +58,7 @@ typedef struct _yaftpd_state_t
     struct passwd *pw;
     struct group *gr;
     int loggedin;
+    int quit;
 }   yaftpd_state_t;
 
 /* SIGCHLD shall be handled or terminated child processes would remain zombie */
@@ -232,7 +233,7 @@ static int socket_listen(yaftpd_state_t *yaftpd_state, int inaddr, int port, int
     };
     if (bind(*fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
     {
-        warn("error binding socket");
+        warn("error binding socket, retrying");
         return -1;
     }
     if (listen(*fd, yaftpd_config->listen_queue_size) < 0)
@@ -661,6 +662,13 @@ static void session_response_rmd(const char *instruction, yaftpd_state_t *yaftpd
     return;
 }
 
+static void session_response_quit(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    yaftpd_state->quit = 1;
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "221 Goodbye, and, have a nice day. :)\r\n");
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -683,6 +691,7 @@ static const session_response_t session_response[] = {
     { "DELE",   session_response_dele },
     { "MKD",    session_response_mkd },
     { "RMD",    session_response_rmd },
+    { "QUIT",   session_response_quit },
     { NULL,     NULL },
 };
 
@@ -761,6 +770,8 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
         }
         if (inst_msg_len > 0)
             printf("COMMAND: %s", instbuff);
+        if (yaftpd_state->quit)
+            break;
     }
     return;
 }
@@ -773,7 +784,12 @@ int main(int argc, char **argv)
         err(1, "requires root to work");
 
     yaftpd_config_t _config = { };
-    yaftpd_state_t _yaftpd_state = { .config = &_config, .loggedin = 0 }, *yaftpd_state = &_yaftpd_state;
+    yaftpd_state_t _yaftpd_state = {
+        .config = &_config,
+        .loggedin = 0,
+        .quit = 0,
+    };
+    yaftpd_state_t *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
     pw_gr_init(yaftpd_state);
     if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->inst_port, &yaftpd_state->inst_listen_fd))
