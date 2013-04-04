@@ -51,6 +51,8 @@ typedef struct _yaftpd_state_t
     int inst_listen_fd;
     int inst_conn_fd;
     int data_conn_mode;
+    int data_conn_addr;
+    int data_conn_port;
     int data_listen_fd;
     int data_conn_fd;
     struct sockaddr saddr;
@@ -262,9 +264,27 @@ static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
     /* preparing the data connection */
     if (yaftpd_state->data_conn_mode == YAFTPD_ACTIVE)
     {
-        /* TODO: implement this */
-        /* this shall not happen for now */
-        err(1, "active mode not implmented yet");
+        int conn_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (conn_fd < 0)
+        {
+            warn("error creating socket");
+            return -1;
+        }
+        char *addrstr;
+        asprintf(&addrstr, "%u", yaftpd_state->data_conn_addr);
+        struct sockaddr_in saddrin = {
+            .sin_family = AF_INET,
+            .sin_port = htons(yaftpd_state->data_conn_port),
+            .sin_addr = inet_addr(addrstr),
+        };
+        if (connect(conn_fd, (struct sockaddr*)&saddrin, sizeof(saddrin)) == -1)
+        {
+            warn("error connecting socket");
+            return -1;
+        }
+        free(addrstr);
+        yaftpd_state->data_conn_fd = conn_fd;
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
     }
     else if (yaftpd_state->data_conn_mode == YAFTPD_PASSIVE)
     {
@@ -669,6 +689,23 @@ static void session_response_quit(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_port(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    int addr[4], port[2];
+    if (sscanf(instruction, "PORT %d,%d,%d,%d,%d,%d", 
+        &addr[0], &addr[1], &addr[2], &addr[3], &port[0], &port[1]) != 6)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+
+    yaftpd_state->data_conn_mode = YAFTPD_ACTIVE;
+    yaftpd_state->data_conn_addr = (addr[0] << 24) | (addr[1] << 16) | (addr[2] << 8) | addr[3];
+    yaftpd_state->data_conn_port = (port[0] << 8) | port[1];
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "220 PORT okay.\r\n");
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -681,7 +718,6 @@ static const session_response_t session_response[] = {
     { "PWD",    session_response_pwd },
     { "TYPE",   session_response_type },
     { "PASV",   session_response_pasv },
-    // { "PORT",   NULL }, /* TODO: implement this */
     { "LIST",   session_response_list },
     { "CWD",    session_response_cwd },
     { "RETR",   session_response_retr },
@@ -692,6 +728,7 @@ static const session_response_t session_response[] = {
     { "MKD",    session_response_mkd },
     { "RMD",    session_response_rmd },
     { "QUIT",   session_response_quit },
+    { "PORT",   session_response_port },
     { NULL,     NULL },
 };
 
