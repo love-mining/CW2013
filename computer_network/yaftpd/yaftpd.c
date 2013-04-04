@@ -345,7 +345,7 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
                 chdir(pw->pw_dir);
                 if (yaftpd_state->config->use_chroot_jail)
                     chroot(pw->pw_dir);
-                if (setegid(pw->pw_gid) || seteuid(pw->pw_uid))
+                if (setegid(pw->pw_gid) || seteuid(pw->pw_uid)) /* the order here matters */
                     warn("error setting euid and egid");
             }
             else
@@ -624,10 +624,40 @@ static void session_response_dele(const char *instruction, yaftpd_state_t *yaftp
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
         return;
     }
-    if (remove(param) == -1)
+    if (unlink(param) == -1)
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "450 %s.\r\n", strerror(errno));
     else
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Command okay.\r\n");
+    return;
+}
+
+static void session_response_mkd(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "MKD %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+    if (mkdir(param, 0777) == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Directory created.\r\n");
+    return;
+}
+
+static void session_response_rmd(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "RMD %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+    if (rmdir(param) == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Directory created.\r\n");
     return;
 }
 
@@ -651,6 +681,8 @@ static const session_response_t session_response[] = {
     { "FEAT",   session_response_feat },
     { "SYST",   session_response_syst },
     { "DELE",   session_response_dele },
+    { "MKD",    session_response_mkd },
+    { "RMD",    session_response_rmd },
     { NULL,     NULL },
 };
 
