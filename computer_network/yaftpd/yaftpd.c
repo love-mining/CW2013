@@ -114,7 +114,7 @@ static void filemodestring(mode_t mode, char *str)
 static void pw_gr_init(yaftpd_state_t *yaftpd_state)
 {
     int i;
-
+    
     FILE *pwin = fopen("/etc/passwd", "r");
     int pwlcnt = 0;
     while (fscanf(pwin, "%*[^\n]\n") != EOF)
@@ -143,17 +143,33 @@ static void pw_gr_init(yaftpd_state_t *yaftpd_state)
     struct group *gr = malloc((grlcnt + 1) * sizeof(struct group));
     yaftpd_state->gr = gr;
     fseek(grin, 0, SEEK_SET);
+    char *_tmpstr;
     for (i = 0; i < grlcnt; i++)
+    {
         fscanf(grin, 
-            "%m[^:]:%m[^:]%d:%m[^:\n]\n",
+            "%m[^:]:%m[^:]:%d%m[^\n]\n",
             &gr[i].gr_name,
             &gr[i].gr_passwd,
             &gr[i].gr_gid,
-            &gr[i].gr_mem
+            &_tmpstr /* starts with a colon. deals with empty group members */
         );
+        char *tmpstr = _tmpstr + 1;
+        int memcnt = *tmpstr ? 1 : 0;
+        while (*tmpstr)
+        {
+            if (*tmpstr == ',')
+                memcnt += 1;
+            tmpstr++;
+        }
+        char **mem = malloc((memcnt + 1) * sizeof(char*));
+        gr[i].gr_mem = mem;
+        mem[0] = strtok(tmpstr, ",");
+        mem += 1;
+        while (*mem = strtok(NULL, ","))
+            mem += 1;
+    }
     gr[grlcnt].gr_gid = -1; /* tail sentinal */
     fclose(grin);
-
     return;
 }
 
@@ -329,8 +345,8 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
                 chdir(pw->pw_dir);
                 if (yaftpd_state->config->use_chroot_jail)
                     chroot(pw->pw_dir);
-                seteuid(pw->pw_uid);
-                setegid(pw->pw_gid);
+                if (setegid(pw->pw_gid) || seteuid(pw->pw_uid))
+                    warn("error setting euid and egid");
             }
             else
                 warn("failed to get struct passwd");
@@ -600,6 +616,21 @@ static void session_response_syst(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_dele(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "DELE %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+    if (remove(param) == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "450 %s.\r\n", strerror(errno));
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Command okay.\r\n");
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -619,6 +650,7 @@ static const session_response_t session_response[] = {
     { "STOR",   session_response_stor },
     { "FEAT",   session_response_feat },
     { "SYST",   session_response_syst },
+    { "DELE",   session_response_dele },
     { NULL,     NULL },
 };
 
