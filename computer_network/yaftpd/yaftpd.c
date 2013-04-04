@@ -39,10 +39,10 @@ typedef struct _yaftpd_config_t
     int listen_queue_size;
     int inst_buffer_size;
     int anonymous_login;
-    const char *anonymous_root;
     int listing_line_size;
     int file_read_buffer_size;
     int data_listener_retry;
+    int use_chroot_jail;
 }   yaftpd_config_t;
 
 typedef struct _yaftpd_state_t
@@ -55,6 +55,8 @@ typedef struct _yaftpd_state_t
     int data_conn_fd;
     struct sockaddr saddr;
     const char *username;
+    struct passwd *pw;
+    struct group *gr;
 }   yaftpd_state_t;
 
 /* SIGCHLD shall be handled or terminated child processes would remain zombie */
@@ -107,6 +109,89 @@ static void filemodestring(mode_t mode, char *str)
     str[11] = '\0';
     return;
 }    
+
+static void pw_gr_init(yaftpd_state_t *yaftpd_state)
+{
+    int i;
+
+    FILE *pwin = fopen("/etc/passwd", "r");
+    int pwlcnt = 0;
+    while (fscanf(pwin, "%*[^\n]\n") != EOF)
+        pwlcnt += 1;
+    struct passwd *pw = malloc((pwlcnt + 1) * sizeof(struct passwd));
+    yaftpd_state->pw = pw;
+    fseek(pwin, 0, SEEK_SET);
+    for (i = 0; i < pwlcnt; i++)
+        fscanf(pwin, 
+            "%m[^:]:%m[^:]:%d:%d:%m[^:]:%m[^:]:%m[^:\n]\n",
+            &pw[i].pw_name,
+            &pw[i].pw_passwd,
+            &pw[i].pw_uid,
+            &pw[i].pw_gid,
+            &pw[i].pw_gecos,
+            &pw[i].pw_dir,
+            &pw[i].pw_shell
+        );
+    pw[pwlcnt].pw_uid = -1; /* tail sentinal */
+    fclose(pwin);
+
+    FILE *grin = fopen("/etc/group", "r");
+    int grlcnt = 0;
+    while (fscanf(grin, "%*[^\n]\n") != EOF)
+        grlcnt += 1;
+    struct group *gr = malloc((grlcnt + 1) * sizeof(struct group));
+    yaftpd_state->gr = gr;
+    fseek(grin, 0, SEEK_SET);
+    for (i = 0; i < grlcnt; i++)
+        fscanf(grin, 
+            "%m[^:]:%m[^:]%d:%m[^:\n]\n",
+            &gr[i].gr_name,
+            &gr[i].gr_passwd,
+            &gr[i].gr_gid,
+            &gr[i].gr_mem
+        );
+    gr[grlcnt].gr_gid = -1; /* tail sentinal */
+    fclose(grin);
+
+    return;
+}
+
+static const struct passwd *getpw_uid(yaftpd_state_t *yaftpd_state, uid_t uid)
+{
+    int i;
+    struct passwd *pw = yaftpd_state->pw;
+    for (i = 0; pw[i].pw_uid != -1; i++)
+        if (pw[i].pw_uid == uid)
+            return &pw[i];
+    
+    static const struct passwd unknown = {
+        .pw_name = "unknown",
+        .pw_passwd = "x",
+        .pw_uid = -1,
+        .pw_gid = -1,
+        .pw_gecos = "unknown",
+        .pw_dir = "unknown",
+        .pw_shell = "unknown",
+    };
+    return &unknown;
+}
+
+static const struct group *getgr_gid(yaftpd_state_t *yaftpd_state, gid_t gid)
+{
+    int i;
+    struct group *gr = yaftpd_state->gr;
+    for (i = 0; gr[i].gr_gid != -1; i++)
+        if (gr[i].gr_gid == gid)
+            return &gr[i];
+    
+    static const struct group unknown = {
+        .gr_name = "unknown",
+        .gr_passwd = "x",
+        .gr_gid = -1,
+        .gr_mem = NULL,
+    };
+    return &unknown;
+}
 
 static int socket_listen(yaftpd_state_t *yaftpd_state, int inaddr, int port, int *fd)
 {
@@ -234,15 +319,15 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
             socket_send_fmtstr(yaftpd_state->inst_conn_fd, "503 Login with USER first.\r\n");
         else if (yaftpd_password_validate(password, yaftpd_state))
         {
-            chdir(yaftpd_state->config->anonymous_root);
-            //chroot(yaftpd_state->config->anonymous_root);
-
             const char *username = yaftpd_state->username;
             if (!strcasecmp(yaftpd_state->username, "anonymous"))
                 username = "ftp";
             struct passwd *pw = getpwnam(username);
             if (pw)
             {
+                chdir(pw->pw_dir);
+                if (yaftpd_state->config->use_chroot_jail)
+                    chroot(pw->pw_dir);
                 seteuid(pw->pw_uid);
                 setegid(pw->pw_gid);
             }
@@ -354,7 +439,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
             char modestr[16];
             filemodestring(statbuf.st_mode, modestr);
 
-            struct passwd *pw = getpwuid(statbuf.st_uid);
+            const struct passwd *pw = getpw_uid(yaftpd_state, statbuf.st_uid);
             if (!pw)
             {
                 warn("failed to getpwuid %d", statbuf.st_uid);
@@ -362,7 +447,7 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
             }
             char *username = strdup(pw->pw_name);
 
-            struct group *gr = getgrgid(statbuf.st_gid);
+            const struct group *gr = getgr_gid(yaftpd_state, statbuf.st_gid);
             if (!gr)
             {
                 warn("failed to getgrgid %d", statbuf.st_gid);
@@ -567,10 +652,10 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     YAFTPD_CONFIG_LOOKUP(int, listen_queue_size);
     YAFTPD_CONFIG_LOOKUP(int, inst_buffer_size);
     YAFTPD_CONFIG_LOOKUP(bool, anonymous_login);
-    YAFTPD_CONFIG_LOOKUP(string, anonymous_root);
     YAFTPD_CONFIG_LOOKUP(int, listing_line_size);
     YAFTPD_CONFIG_LOOKUP(int, file_read_buffer_size);
     YAFTPD_CONFIG_LOOKUP(int, data_listener_retry);
+    YAFTPD_CONFIG_LOOKUP(bool, use_chroot_jail);
 #undef YAFTPD_CONFIG_LOOKUP
 
     config_destroy(cfg);
@@ -621,6 +706,7 @@ int main(int argc, char **argv)
     yaftpd_config_t _config = { };
     yaftpd_state_t _yaftpd_state = { .config = &_config }, *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
+    pw_gr_init(yaftpd_state);
     if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->inst_port, &yaftpd_state->inst_listen_fd))
         exit(1);
     
