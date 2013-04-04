@@ -749,6 +749,7 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
         if (inst_msg_len == yaftpd_config->inst_buffer_size)
             fprintf(stderr, "%s: warning: Maximum instruction size exceeded.", program_invocation_short_name);
         instbuff[inst_msg_len] = 0; /* manually added \0 for c strings */
+        printf("PID=%d: Command received: %s", getpid(), instbuff);
 
         /* a naive parsing routine. shall use flex+bison instead. */
         int i;
@@ -768,8 +769,7 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
             /* shall be handled by a new thread */
             sp->handler(instbuff, yaftpd_state);
         }
-        if (inst_msg_len > 0)
-            printf("COMMAND: %s", instbuff);
+        printf("PID=%d: Command finished: %s", getpid(), instbuff);
         if (yaftpd_state->quit)
             break;
     }
