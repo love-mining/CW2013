@@ -2,7 +2,7 @@
 # By Pengyu CHEN(cpy.prefers.you@gmail.com)
 # COPYLEFT, ALL WRONGS RESERVED.
 
-CC = gcc 
+CC = gcc
 CCFLAG = -g -c -O2
 LD = gcc
 LDFLAG = -g -lconfig -O2

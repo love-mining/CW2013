@@ -57,6 +57,7 @@ typedef struct _yaftpd_state_t
     const char *username;
     struct passwd *pw;
     struct group *gr;
+    int loggedin;
 }   yaftpd_state_t;
 
 /* SIGCHLD shall be handled or terminated child processes would remain zombie */
@@ -333,7 +334,7 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
             }
             else
                 warn("failed to get struct passwd");
-
+            yaftpd_state->loggedin = 1;
             socket_send_fmtstr(yaftpd_state->inst_conn_fd, "230 User logged in, proceed.\r\n");
         }
         else
@@ -681,17 +682,21 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
         const session_response_t *sp;
         for (i = 0; sp = &session_response[i], sp->instname; i++)
             if (!strncasecmp(sp->instname, instbuff, strlen(sp->instname)))
-            {
-                /* TODO: rewrite this to multi-thread */
-                /* shall be handled by a new thread */
-                sp->handler(instbuff, yaftpd_state);
-                break;
-            }
+               break;
         if (!sp->instname) /* not parsed */
             socket_send_fmtstr(yaftpd_state->inst_conn_fd, "502 Command not implemneted.\r\n");
-            
+        else if (strncasecmp(instbuff, "USER", strlen("USER"))
+            && strncasecmp(instbuff, "PASS", strlen("PASS"))
+            && !yaftpd_state->loggedin)
+            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "503 Not logged in.\r\n");
+        else
+        {
+            /* TODO: rewrite this to multi-thread */
+            /* shall be handled by a new thread */
+            sp->handler(instbuff, yaftpd_state);
+        }
         if (inst_msg_len > 0)
-            printf("%s", instbuff);
+            printf("COMMAND: %s", instbuff);
     }
     return;
 }
@@ -704,7 +709,7 @@ int main(int argc, char **argv)
         err(1, "requires root to work");
 
     yaftpd_config_t _config = { };
-    yaftpd_state_t _yaftpd_state = { .config = &_config }, *yaftpd_state = &_yaftpd_state;
+    yaftpd_state_t _yaftpd_state = { .config = &_config, .loggedin = 0 }, *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
     pw_gr_init(yaftpd_state);
     if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->inst_port, &yaftpd_state->inst_listen_fd))
