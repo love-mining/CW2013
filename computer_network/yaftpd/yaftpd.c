@@ -402,6 +402,7 @@ static void session_response_pass(const char *instruction, yaftpd_state_t *yaftp
 static void session_response_pwd(const char *instruction, yaftpd_state_t *yaftpd_state)
 {
     char *pwd = get_current_dir_name();
+    printf("WTF %s\n", pwd);
     socket_send_fmtstr(yaftpd_state->inst_conn_fd, "257 \"%s\"\r\n", pwd);
     free(pwd);
     return;
@@ -649,6 +650,7 @@ static void session_response_feat(const char *instruction, yaftpd_state_t *yaftp
 {
     const char *featstr = 
         "211-Features\r\n"
+        "UTF8\r\n"
         "211 End\r\n";
     socket_send_fmtstr(yaftpd_state->inst_conn_fd, featstr);
     return;
