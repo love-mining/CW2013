@@ -5,7 +5,7 @@
 CC = gcc
 CCFLAG = -g -c -O2
 LD = gcc
-LDFLAG = -g -lconfig -O2
+LDFLAG = -g -lconfig -O2 -lcrypt
 
 #.PHONY: clean
 

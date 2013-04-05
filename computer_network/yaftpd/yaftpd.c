@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <pwd.h>
 #include <grp.h>
+#include <shadow.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <netinet/in.h>
@@ -308,10 +309,10 @@ static int yaftpd_username_validate(const char *username, yaftpd_state_t *yaftpd
     }
     else
     {
-        const struct group *ftpgr = getgr_name(yaftpd_state, "ftp");
+        const struct group *ftpgr = getgrnam("ftp");
         if (!ftpgr) 
         {
-            warn("criticall error: can not find group ftp.");
+            warn("error reading group ftp.");
             return 0;
         }
         char **s;
@@ -346,7 +347,21 @@ static int yaftpd_password_validate(const char *password, yaftpd_state_t *yaftpd
         return 1;
     else
     {
-        /* TODO: general password validate. check with getspnam and getpwnam */
+        struct passwd *pw = getpwnam(yaftpd_state->username);
+        struct spwd *sp = getspnam(yaftpd_state->username);
+        if (!pw || !sp)
+            return 0;
+        char *orig_pass = pw->pw_passwd;
+        if (sp->sp_pwdp)
+            orig_pass = sp->sp_pwdp;
+        char *encrypted_pass = crypt(password, orig_pass);
+        if (!encrypted_pass)
+        {
+            warn("error encrypting password");
+            return 0;
+        }
+        if (!strcmp(encrypted_pass, orig_pass))
+            return 1;
     }
     return 0;
 }
