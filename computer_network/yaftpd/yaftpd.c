@@ -62,6 +62,7 @@ typedef struct _yaftpd_state_t
     int loggedin;
     int quit;
     size_t rest_offset;
+    char *rnfr;
 }   yaftpd_state_t;
 
 /* SIGCHLD shall be handled or terminated child processes would remain zombie */
@@ -73,28 +74,28 @@ static void sig_chld_hndl(int signo)
     return;
 }
 
-static inline char ftypelet(mode_t bits)
+static inline char ftypechr(mode_t mode)
 {
-    if (S_ISREG (bits))
+    if (S_ISREG(mode))
         return '-';
-    if (S_ISDIR (bits))
-        return 'd';
-    if (S_ISBLK (bits))
-        return 'b';
-    if (S_ISCHR (bits))
+    if (S_ISDIR(mode))
+        return'd';
+    if (S_ISBLK(mode))
+        return'b';
+    if (S_ISCHR(mode))
         return 'c';
-    if (S_ISLNK (bits))
+    if (S_ISLNK(mode))
         return 'l';
-    if (S_ISFIFO (bits))
+    if (S_ISFIFO(mode))
         return 'p';
-    if (S_ISSOCK (bits))
+    if (S_ISSOCK(mode))
         return 's';
     return '?';
 }
 
 static void filemodestring(mode_t mode, char *str)
 {
-    str[0] = ftypelet (mode);
+    str[0] = ftypechr(mode);
     str[1] = mode & S_IRUSR ? 'r' : '-';
     str[2] = mode & S_IWUSR ? 'w' : '-';
     str[3] = (mode & S_ISUID
@@ -774,6 +775,43 @@ static void session_response_rest(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_rnfr(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "RNFR %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+    yaftpd_state->rnfr = strdup(param);
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "350 Requested action pending further information.\r\n");
+    return;
+}
+
+static void session_response_rnto(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    if (sscanf(instruction, "RNTO %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+    if (!yaftpd_state->rnfr)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "503 Missing a previous RNFR command.\r\n");
+        return;
+    }
+    if (rename(yaftpd_state->rnfr, param) == -1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
+        return;
+    }
+    free(yaftpd_state->rnfr);
+    yaftpd_state->rnfr = NULL;
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "250 Renamed.\r\n");
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -799,6 +837,8 @@ static const session_response_t session_response[] = {
     { "PORT",   session_response_port },
     { "APPE",   session_response_appe },
     { "REST",   session_response_rest },
+    { "RNFR",   session_response_rnfr },
+    { "RNTO",   session_response_rnto },
     { NULL,     NULL },
 };
 
@@ -896,6 +936,7 @@ int main(int argc, char **argv)
         //.loggedin = 0,
         //.quit = 0,
         //.rest_offset = 0,
+        //.rnfr = NULL,
     };
     yaftpd_state_t *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
