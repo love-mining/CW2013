@@ -289,7 +289,6 @@ static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
             return -1;
         struct sockaddr dsaddr;        
         int saddr_len = sizeof(dsaddr);
-        
         /* this would block until an incoming connection */
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
         yaftpd_state->data_conn_fd = accept(yaftpd_state->data_listen_fd, &dsaddr, &saddr_len);
@@ -433,7 +432,6 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
         close(yaftpd_state->data_listen_fd);
         yaftpd_state->data_listen_fd = -1;
     }
-
     yaftpd_state->data_conn_mode = YAFTPD_PASSIVE;
     int i;
     for (i = 0; i < yaftpd_state->config->data_listener_retry; i++)
@@ -447,7 +445,6 @@ static void session_response_pasv(const char *instruction, yaftpd_state_t *yaftp
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open passive connection.\r\n");
         return;
     }
-    
     struct sockaddr_in addr;
     int addrlen = sizeof(addr);
     if (getsockname(yaftpd_state->inst_conn_fd, &addr, &addrlen))
@@ -471,13 +468,11 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     char *target = param;
     if (sscanf(instruction, "LIST %[^\r]", param) < 1)
         target = ".";
-
     if (yaftpd_setup_data_conn(yaftpd_state) < 0)
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
         return;
     }
-
     /* do the listing and send data */
     /* assuming the target is always a directory */
     DIR *dir = opendir(target);
@@ -489,14 +484,13 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
             struct stat statbuf;
             char fpath[yaftpd_state->config->inst_buffer_size];
             sprintf(fpath, "%s/%s", target, dent->d_name);
-            if (stat(fpath, &statbuf) == -1)
+            if (lstat(fpath, &statbuf) == -1)
             {
                 warn("failed to stat: %s", dent->d_name);
                 break;
             }
             char modestr[16];
             filemodestring(statbuf.st_mode, modestr);
-
             const struct passwd *pw = getpw_uid(yaftpd_state, statbuf.st_uid);
             if (!pw)
             {
@@ -504,7 +498,6 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
                 break;
             }
             char *username = strdup(pw->pw_name);
-
             const struct group *gr = getgr_gid(yaftpd_state, statbuf.st_gid);
             if (!gr)
             {
@@ -512,15 +505,12 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
                 break;
             }
             char *groupname = strdup(gr->gr_name);
-
             char *mtime = strdup(ctime(&statbuf.st_mtime));
             /* manually stripping the last new line */
             mtime[strlen(mtime) - 1] = 0;
- 
             int mtimestr_sz = 16;
             char mtimestr[mtimestr_sz];
             strftime(mtimestr, mtimestr_sz, "%b %e  %Y", localtime(&statbuf.st_mtime));
-            
             socket_send_fmtstr(yaftpd_state->data_conn_fd, 
                 "%s %d %s %s %lld %s %s\r\n",
                 modestr,
@@ -874,7 +864,6 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
             config_error_text(cfg));
         exit(1);
     }
-
 #define YAFTPD_CONFIG_LOOKUP(type, name)    \
     if (config_lookup_##type(cfg, #name, &config->name) == CONFIG_FALSE)  \
     {   \
@@ -884,7 +873,6 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     }   \
     if (!strcmp(#type, "string"))   \
         *(const char**)&config->name = strdup(*(const char**)&config->name);
-        
     YAFTPD_CONFIG_LOOKUP(int, inst_port);
     YAFTPD_CONFIG_LOOKUP(int, data_port);
     YAFTPD_CONFIG_LOOKUP(string, welcome_message);
@@ -896,7 +884,6 @@ static void config_file_read(const char *filename, yaftpd_state_t *yaftpd_state)
     YAFTPD_CONFIG_LOOKUP(int, data_listener_retry);
     YAFTPD_CONFIG_LOOKUP(bool, use_chroot_jail);
 #undef YAFTPD_CONFIG_LOOKUP
-
     config_destroy(cfg);
     return;
 }
@@ -943,7 +930,7 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
 
 int main(int argc, char **argv)
 {   
-    /* to work with chroot jail we need root privilege,
+    /* to work with user login and chroot jail we need root privilege,
      * also when the port number is less than 1024 it requires root */
     if (chroot("/") < 0)
         err(1, "requires root to work");
@@ -961,6 +948,8 @@ int main(int argc, char **argv)
     pw_gr_init(yaftpd_state);
     if (socket_listen(yaftpd_state, INADDR_ANY, yaftpd_state->config->inst_port, &yaftpd_state->inst_listen_fd))
         exit(1);
+
+    printf("Initialization finished. Now listening.\n");
     
     /* main loop */
     while (1)
@@ -995,7 +984,5 @@ int main(int argc, char **argv)
 
     /* execution flow shall not reach here */
     err(1, "this line shall not be executed");
-
     return 0;
 }
-
