@@ -61,6 +61,7 @@ typedef struct _yaftpd_state_t
     struct group *gr;
     int loggedin;
     int quit;
+    size_t rest_offset;
 }   yaftpd_state_t;
 
 /* SIGCHLD shall be handled or terminated child processes would remain zombie */
@@ -549,15 +550,21 @@ static void session_response_retr(const char *instruction, yaftpd_state_t *yaftp
     char *target = param;
     if (sscanf(instruction, "RETR %[^\r]", param) < 1)
     {
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 Syntax error.\r\n");
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
         return;
     }
     int retr_fd = open(param, O_RDONLY);
     if (retr_fd == -1)
     {
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 %s.\r\n", strerror(errno));
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
         return;
     }
+    if (lseek(retr_fd, yaftpd_state->rest_offset, SEEK_SET) == -1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
+        return;
+    }
+    yaftpd_state->rest_offset = 0;
     if (yaftpd_setup_data_conn(yaftpd_state) < 0)
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
@@ -588,16 +595,23 @@ static void session_response_stor(const char *instruction, yaftpd_state_t *yaftp
     char *target = param;
     if (sscanf(instruction, "STOR %[^\r]", param) < 1)
     {
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 Syntax error.\r\n");
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
         return;
     }
 
-    int stor_fd = open(param, O_WRONLY | O_CREAT);
+    int stor_fd = open(param, O_WRONLY | O_CREAT, 0777);
     if (stor_fd == -1)
     {
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "500 %s.\r\n", strerror(errno));
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
         return;
     }
+    if (lseek(stor_fd, yaftpd_state->rest_offset, SEEK_SET) == -1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
+        return;
+    }
+    yaftpd_state->rest_offset = 0;
+
     if (yaftpd_setup_data_conn(yaftpd_state) < 0)
     {
         socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
@@ -706,6 +720,60 @@ static void session_response_port(const char *instruction, yaftpd_state_t *yaftp
     return;
 }
 
+static void session_response_appe(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    char param[yaftpd_state->config->inst_buffer_size];
+    char *target = param;
+    if (sscanf(instruction, "APPE %[^\r]", param) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+
+    int stor_fd = open(param, O_WRONLY | O_APPEND);
+    if (stor_fd == -1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "550 %s.\r\n", strerror(errno));
+        return;
+    }
+    if (yaftpd_setup_data_conn(yaftpd_state) < 0)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "425 Cannot open data connection.\r\n");
+        return;
+    }
+
+    int buffsz = yaftpd_state->config->file_read_buffer_size;
+    char buf[buffsz];
+    int readsz;
+    int writeret;
+    while ((readsz = recv(yaftpd_state->data_conn_fd, buf, buffsz, 0)) > 0)
+        if ((writeret = write(stor_fd, buf, readsz)) == -1)
+            break;
+    if (readsz == -1 && errno != ECONNRESET)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "426 %s.\r\n", strerror(errno));
+    else if (writeret == -1)
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 %s.\r\n", strerror(errno));
+    else
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Transfer complete.\r\n");
+    close(yaftpd_state->data_conn_fd);
+    close(stor_fd);
+    return;
+}
+
+static void session_response_rest(const char *instruction, yaftpd_state_t *yaftpd_state)
+{
+    unsigned long long offset;
+    if (sscanf(instruction, "REST %llu", &offset) < 1)
+    {
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "501 Syntax error.\r\n");
+        return;
+    }
+
+    yaftpd_state->rest_offset = offset;
+    socket_send_fmtstr(yaftpd_state->inst_conn_fd, "350 Offset set at %llu.\r\n", offset);
+    return;
+}
+
 typedef struct _session_response_t
 {
     const char *instname;
@@ -729,6 +797,8 @@ static const session_response_t session_response[] = {
     { "RMD",    session_response_rmd },
     { "QUIT",   session_response_quit },
     { "PORT",   session_response_port },
+    { "APPE",   session_response_appe },
+    { "REST",   session_response_rest },
     { NULL,     NULL },
 };
 
@@ -823,8 +893,9 @@ int main(int argc, char **argv)
     yaftpd_config_t _config = { };
     yaftpd_state_t _yaftpd_state = {
         .config = &_config,
-        .loggedin = 0,
-        .quit = 0,
+        //.loggedin = 0,
+        //.quit = 0,
+        //.rest_offset = 0,
     };
     yaftpd_state_t *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
