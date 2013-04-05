@@ -166,6 +166,7 @@ static void pw_gr_init(yaftpd_state_t *yaftpd_state)
                 memcnt += 1;
             tmpstr++;
         }
+        tmpstr = _tmpstr + 1;
         char **mem = malloc((memcnt + 1) * sizeof(char*));
         gr[i].gr_mem = mem;
         mem[0] = strtok(tmpstr, ",");
@@ -185,17 +186,7 @@ static const struct passwd *getpw_uid(yaftpd_state_t *yaftpd_state, uid_t uid)
     for (i = 0; pw[i].pw_uid != -1; i++)
         if (pw[i].pw_uid == uid)
             return &pw[i];
-    
-    static const struct passwd unknown = {
-        .pw_name = "unknown",
-        .pw_passwd = "x",
-        .pw_uid = -1,
-        .pw_gid = -1,
-        .pw_gecos = "unknown",
-        .pw_dir = "unknown",
-        .pw_shell = "unknown",
-    };
-    return &unknown;
+   return NULL;
 }
 
 static const struct group *getgr_gid(yaftpd_state_t *yaftpd_state, gid_t gid)
@@ -205,14 +196,17 @@ static const struct group *getgr_gid(yaftpd_state_t *yaftpd_state, gid_t gid)
     for (i = 0; gr[i].gr_gid != -1; i++)
         if (gr[i].gr_gid == gid)
             return &gr[i];
-    
-    static const struct group unknown = {
-        .gr_name = "unknown",
-        .gr_passwd = "x",
-        .gr_gid = -1,
-        .gr_mem = NULL,
-    };
-    return &unknown;
+   return NULL;
+}
+
+static const struct group *getgr_name(yaftpd_state_t *yaftpd_state, const char *name)
+{
+    int i;
+    struct group *gr = yaftpd_state->gr;
+    for (i = 0; gr[i].gr_gid != -1; i++)
+        if (!strcmp(gr[i].gr_name, name))
+            return &gr[i];
+   return NULL;
 }
 
 static int socket_listen(yaftpd_state_t *yaftpd_state, int inaddr, int port, int *fd)
@@ -279,6 +273,7 @@ static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
             .sin_port = htons(yaftpd_state->data_conn_port),
             .sin_addr = inet_addr(addrstr),
         };
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
         if (connect(conn_fd, (struct sockaddr*)&saddrin, sizeof(saddrin)) == -1)
         {
             warn("error connecting socket");
@@ -286,7 +281,6 @@ static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
         }
         free(addrstr);
         yaftpd_state->data_conn_fd = conn_fd;
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
     }
     else if (yaftpd_state->data_conn_mode == YAFTPD_PASSIVE)
     {
@@ -296,10 +290,10 @@ static int yaftpd_setup_data_conn(yaftpd_state_t *yaftpd_state)
         int saddr_len = sizeof(dsaddr);
         
         /* this would block until an incoming connection */
+        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
         yaftpd_state->data_conn_fd = accept(yaftpd_state->data_listen_fd, &dsaddr, &saddr_len);
         if (yaftpd_state->data_conn_fd < 0)
             return -1;
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "150 Opening data connection.\r\n");
     }
     else
         return -1;
@@ -314,7 +308,16 @@ static int yaftpd_username_validate(const char *username, yaftpd_state_t *yaftpd
     }
     else
     {
-        /* TODO: general username validate. check if inside ftp group */
+        const struct group *ftpgr = getgr_name(yaftpd_state, "ftp");
+        if (!ftpgr) 
+        {
+            warn("criticall error: can not find group ftp.");
+            return 0;
+        }
+        char **s;
+        for (s = ftpgr->gr_mem; *s; s++)
+            if (!strcmp(username, *s)) /* username is in group ftp */
+                return 1;
     }
     return 0;
 }
@@ -916,7 +919,7 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
             /* shall be handled by a new thread */
             sp->handler(instbuff, yaftpd_state);
         }
-        printf("PID=%d: Command finished: %s", getpid(), instbuff);
+        printf("PID=%d: Command finished.\n", getpid());
         if (yaftpd_state->quit)
             break;
     }
