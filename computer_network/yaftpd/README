@@ -2,15 +2,25 @@ This is yaftpd: yet another ftp deamon as coursework for Computer Network
 by Pengyu CHEN(cpy.prefers.you@gmail.com)
 COPYLEFT, ALL WRONGS RESERVED.
 
-Supported ftp commands: (TBD)
-ABOR
-USER
+Supported ftp commands:
+
 PASS
-SIZE
-CWD
+PWD
+TYPE
 PASV
+LIST
+CWD
 RETR
 STOR
-REST
+FEAT
+SYST
+DELE
+MKD
+RMD
 QUIT
+PORT
+APPE
+REST
+RNFR
+RNTO
 
