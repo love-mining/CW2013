@@ -897,8 +897,21 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
 
     char instbuff[yaftpd_config->inst_buffer_size];
     int inst_msg_len;
-    while (inst_msg_len = recv(yaftpd_state->inst_conn_fd, instbuff, yaftpd_config->inst_buffer_size, 0))
+    while (1)
     {
+        inst_msg_len = 0;
+        while (inst_msg_len < 2 || strncmp("\r\n", instbuff + inst_msg_len - 2, 2))
+        {
+            int len = recv(yaftpd_state->inst_conn_fd, instbuff + inst_msg_len, 
+                yaftpd_config->inst_buffer_size - inst_msg_len, 0);
+            if (len < 0)
+            {
+                warn("sesssion disconnected");
+                return;
+            }
+            inst_msg_len += len;
+        }
+        
         /* assuming the maximum instruction size is no more than inst_buffer_size */
         if (inst_msg_len == yaftpd_config->inst_buffer_size)
             fprintf(stderr, "%s: warning: Maximum instruction size exceeded.", program_invocation_short_name);
