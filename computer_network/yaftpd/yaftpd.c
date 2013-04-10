@@ -476,64 +476,97 @@ static void session_response_list(const char *instruction, yaftpd_state_t *yaftp
     }
     /* do the listing and send data */
     /* assuming the target is always a directory */
-    DIR *dir = opendir(target);
-    if (dir)
+    DIR *dir;
+    unsigned int maxwidth[7] = {};
+    unsigned long long tmpsz1 = 0, tmpsz4 = 0;
+    int i;
+    /* one scan to get the maximum width and another to output */
+    for (i = 0; i < 2; i++)
     {
-        struct dirent *dent;
-        while ((dent = readdir(dir)) != NULL)
+        if (i == 1)
         {
-            struct stat statbuf;
-            char fpath[yaftpd_state->config->inst_buffer_size];
-            sprintf(fpath, "%s/%s", target, dent->d_name);
-            if (lstat(fpath, &statbuf) == -1)
-            {
-                warn("failed to stat: %s", dent->d_name);
-                break;
-            }
-            char modestr[16];
-            filemodestring(statbuf.st_mode, modestr);
-            const struct passwd *pw = getpw_uid(yaftpd_state, statbuf.st_uid);
-            if (!pw)
-            {
-                warn("failed to getpwuid %d", statbuf.st_uid);
-                break;
-            }
-            char *username = strdup(pw->pw_name);
-            const struct group *gr = getgr_gid(yaftpd_state, statbuf.st_gid);
-            if (!gr)
-            {
-                warn("failed to getgrgid %d", statbuf.st_gid);
-                break;
-            }
-            char *groupname = strdup(gr->gr_name);
-            char *mtime = strdup(ctime(&statbuf.st_mtime));
-            /* manually stripping the last new line */
-            mtime[strlen(mtime) - 1] = 0;
-            int mtimestr_sz = 16;
-            char mtimestr[mtimestr_sz];
-            strftime(mtimestr, mtimestr_sz, "%b %e  %Y", localtime(&statbuf.st_mtime));
-            socket_send_fmtstr(yaftpd_state->data_conn_fd, 
-                "%s %d %s %s %lld %s %s\r\n",
-                modestr,
-                statbuf.st_nlink,
-                username,
-                groupname,
-                (unsigned long long)statbuf.st_size,
-                mtimestr,
-                dent->d_name
-                );
-            free(username);
-            free(groupname);
+            char tmp[32];
+            sprintf(tmp, "%ul", tmpsz1);
+            maxwidth[1] = strlen(tmp);
+            sprintf(tmp, "%ul", tmpsz4);
+            maxwidth[4] = strlen(tmp);
         }
-        if (!dent)
-            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Listing complete.\r\n");
+        if (dir = opendir(target))
+        {
+            struct dirent *dent;
+            while ((dent = readdir(dir)) != NULL)
+            {
+                struct stat statbuf;
+                char fpath[yaftpd_state->config->inst_buffer_size];
+                sprintf(fpath, "%s/%s", target, dent->d_name);
+                if (lstat(fpath, &statbuf) == -1)
+                {
+                    warn("failed to stat: %s", dent->d_name);
+                    break;
+                }
+                char modestr[16];
+                filemodestring(statbuf.st_mode, modestr);
+                const struct passwd *pw = getpw_uid(yaftpd_state, statbuf.st_uid);
+                if (!pw)
+                {
+                    warn("failed to getpwuid %d", statbuf.st_uid);
+                    break;
+                }
+                char *username = strdup(pw->pw_name);
+                const struct group *gr = getgr_gid(yaftpd_state, statbuf.st_gid);
+                if (!gr)
+                {
+                    warn("failed to getgrgid %d", statbuf.st_gid);
+                    break;
+                }
+                char *groupname = strdup(gr->gr_name);
+                char *mtime = strdup(ctime(&statbuf.st_mtime));
+                /* manually stripping the last new line */
+                mtime[strlen(mtime) - 1] = 0;
+                int mtimestr_sz = 16;
+                char mtimestr[mtimestr_sz];
+                strftime(mtimestr, mtimestr_sz, "%b %e  %Y", localtime(&statbuf.st_mtime));
+                if (i == 0) /* get the maximum width */
+                {
+#ifndef MAX
+# define MAX(a, b) ((a) > (b) ? (a) : (b))
+                    maxwidth[0] = MAX(maxwidth[0], strlen(modestr));
+                    tmpsz1 = MAX(tmpsz1, statbuf.st_nlink);
+                    maxwidth[2] = MAX(maxwidth[2], strlen(username));
+                    maxwidth[3] = MAX(maxwidth[3], strlen(groupname));
+                    tmpsz4 = MAX(tmpsz4, statbuf.st_size);
+                    maxwidth[5] = MAX(maxwidth[5], strlen(mtimestr));
+# undef MAX
+#else
+# error "there shall not be MAX defined"
+#endif
+                }
+                else if (i == 1) /* do the output */
+                {
+                    socket_send_fmtstr(yaftpd_state->data_conn_fd, 
+                        "%-*s %*u %-*s %-*s %*llu %-*s %s\r\n",
+                        maxwidth[0], modestr,
+                        maxwidth[1], statbuf.st_nlink, 
+                        maxwidth[2], username, 
+                        maxwidth[3], groupname,
+                        maxwidth[4], (unsigned long long)statbuf.st_size, 
+                        maxwidth[5], mtimestr,
+                        dent->d_name
+                        );
+                }
+                free(username);
+                free(groupname);
+            }
+            if (!dent && i == 1) /* loop 2 finished */
+                socket_send_fmtstr(yaftpd_state->inst_conn_fd, "226 Listing complete.\r\n");
+            else if (dent)
+                socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 File listing failed.\r\n");
+            closedir(dir);
+        }
         else
-            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 File listing failed.\r\n");
-        closedir(dir);
-    }
-    else
-    {
-        socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 File listing failed: %s.\r\n", strerror(errno));
+        {
+            socket_send_fmtstr(yaftpd_state->inst_conn_fd, "551 File listing failed: %s.\r\n", strerror(errno));
+        }
     }
     
     close(yaftpd_state->data_conn_fd);
