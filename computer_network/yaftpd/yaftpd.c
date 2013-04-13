@@ -937,9 +937,9 @@ static void yaftpd_session(yaftpd_state_t *yaftpd_state)
         {
             int len = recv(yaftpd_state->inst_conn_fd, instbuff + inst_msg_len, 
                 yaftpd_config->inst_buffer_size - inst_msg_len, 0);
-            if (len < 0)
+            if (len <= 0)
             {
-                warn("sesssion disconnected");
+                warnx("sesssion disconnected");
                 return;
             }
             inst_msg_len += len;
@@ -986,10 +986,6 @@ int main(int argc, char **argv)
     yaftpd_config_t _config = { };
     yaftpd_state_t _yaftpd_state = {
         .config = &_config,
-        //.loggedin = 0,
-        //.quit = 0,
-        //.rest_offset = 0,
-        //.rnfr = NULL,
     };
     yaftpd_state_t *yaftpd_state = &_yaftpd_state;
     config_file_read("yaftpd.conf", yaftpd_state);
