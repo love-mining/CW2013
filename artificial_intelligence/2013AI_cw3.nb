@@ -1,0 +1,87 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 9.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       157,          7]
+NotebookDataLength[      2506,         78]
+NotebookOptionsPosition[      2270,         65]
+NotebookOutlinePosition[      2607,         80]
+CellTagsIndexPosition[      2564,         77]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"(*", "\[IndentingNewLine]", 
+   RowBox[{
+    RowBox[{"*", " ", "This", " ", "is", " ", "2013", 
+     RowBox[{"AI_cw3", ".", "nb"}], " ", "by", " ", "Pengyu", " ", "CHEN", 
+     RowBox[{"(", 
+      RowBox[{"cpy", ".", "prefers", ".", 
+       RowBox[{"you", "@", "gmail"}], ".", "com"}], ")"}]}], ",", 
+    "\[IndentingNewLine]", 
+    RowBox[{
+    "*", " ", "As", " ", "the", " ", "course", " ", "work", " ", "of", " ", 
+     "Artificial", " ", "Intelligence"}], ",", 
+    RowBox[{"2013.02", "-", "2013.04"}], ",", "\[IndentingNewLine]", 
+    RowBox[{"*", " ", "COPYLEFT"}], ",", 
+    RowBox[{"ALL", " ", "WRONGS", " ", 
+     RowBox[{"RESERVED", "."}]}]}], "\[IndentingNewLine]", "*)"}], 
+  "\[IndentingNewLine]", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"data", "=", 
+     RowBox[{"FinancialData", "[", 
+      RowBox[{"\"\<NASDAQ:GOOG\>\"", ",", "\"\<OHLCV\>\"", ",", "All"}], 
+      "]"}]}], ";"}], "\[IndentingNewLine]", 
+   RowBox[{"Export", "[", 
+    RowBox[{"\"\<cw3.in\>\"", ",", 
+     RowBox[{"Flatten", "[", 
+      RowBox[{"Map", "[", 
+       RowBox[{
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{
+            RowBox[{"#", "[", 
+             RowBox[{"[", "2", "]"}], "]"}], "[", 
+            RowBox[{"[", "4", "]"}], "]"}], ",", 
+           RowBox[{
+            RowBox[{"#", "[", 
+             RowBox[{"[", "2", "]"}], "]"}], "[", 
+            RowBox[{"[", "5", "]"}], "]"}]}], "}"}], "&"}], ",", "data"}], 
+       "]"}], "]"}], ",", "\"\<Table\>\""}], "]"}]}]}]], "Input",
+ CellChangeTimes->{{3.5761252917645073`*^9, 3.576125307028412*^9}, {
+  3.576125363153227*^9, 3.576125368788574*^9}, {3.576161840346014*^9, 
+  3.576161895411574*^9}}]
+},
+WindowSize->{785, 867},
+WindowMargins->{{Automatic, 769}, {-9, Automatic}},
+FrontEndVersion->"9.0 for Linux x86 (64-bit) (February 7, 2013)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[557, 20, 1709, 43, 145, "Input"]
+}
+]
+*)
+
+(* End of internal cache information *)
