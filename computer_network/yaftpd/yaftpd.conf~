@@ -1,0 +1,22 @@
+# This is part of coursework for Computer Network, 2013.02-2013.06
+# By Pengyu CHEN(cpy.prefers.you@gmail.com)
+# COPYLEFT, ALL WRONGS RESERVED.
+
+# General parameters
+inst_port   = 21
+data_port   = 20 # not used since in PASV mode it uses random port number
+welcome_message = 
+    "220-Hello and, again, welcome to the Aperture Science computer-aided enrichment center.\r\n"
+    "220-This is yaftpd as part of the coursework for Computer Network, 2013.02-2013.06.\r\n"
+    "220-By Pengyu CHEN(cpy.prefers.you@gmail.com).\r\n"
+    "220 COPYLEFT, ALL WRONGS RESERVED.\r\n"
+
+anonymous_login = true
+use_chroot_jail = true
+
+# Do not change the following items unless you know what you're doing
+listen_queue_size   = 16
+inst_buffer_size    = 1024
+listing_line_size   = 1024
+file_read_buffer_size   = 4096
+data_listener_retry = 10
