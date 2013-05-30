@@ -25,19 +25,19 @@ all: E6_30
 E6_30: E6_30.tab.o E6_30.yy.o E6_30.o
 	$(LD) $(LDFLAGS) -o E6_30 E6_30.tab.o E6_30.yy.o E6_30.o
 
-E6_30.o: E6_30.c E6_30.yy.h E6_30.tab.h
+E6_30.o: E6_30.c E6_30.yy.h E6_30.tab.h E6_30.h
 	$(CC) $(CCFLAGS) -o E6_30.o E6_30.c
 
 E6_30.tab.o: E6_30.tab.c
 	$(CC) $(CCFLAGS) -o E6_30.tab.o E6_30.tab.c
 
-E6_30.tab.h E6_30.tab.c: E6_30.y
+E6_30.tab.h E6_30.tab.c: E6_30.y E6_30.h
 	$(YACC) $(YACCFLAGS) -o E6_30.tab.c E6_30.y
 
 E6_30.yy.o: E6_30.yy.c
 	$(CC) $(CCFLAGS) -o E6_30.yy.o E6_30.yy.c
 
-E6_30.yy.h E6_30.yy.c: E6_30.lex E6_30.tab.h
+E6_30.yy.h E6_30.yy.c: E6_30.lex E6_30.tab.h E6_30.h
 	$(LEX) $(LEXFLAGS) --header-file=E6_30.yy.h -o E6_30.yy.c E6_30.lex
 
 wc:

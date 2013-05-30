@@ -1,0 +1,8 @@
+a: int;
+b: int;
+c: array [23] of bool;
+d: array [10] of array [1] of int;
+if true or 1 then b:=a+2;
+if true or false then b:=d[a][b];
+a:=a+1
+
