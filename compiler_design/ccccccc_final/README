@@ -1,0 +1,9 @@
+This is part of the coursework for Compiler Design, 2013.05-06
+by Pengyu CHEN (cpy.prefers.you[at]gmail.com)
+COPYLEFT, ALL WRONGS RESERVED.
+
+CCCCC here is short for "Childish and Critically Challenged Compiler for C-minus Crafted by Chen"
+
+Just `make` it, and then invoke them by `./ccccccc`
+Use the option of `-h` for help.
+
