@@ -16,22 +16,27 @@ enum
 
 typedef unsigned int u32_t;
 typedef unsigned long u64_t;
+typedef int i32_t;
+typedef long long i64_t;
 
-typedef struct _type_t
+typedef void *hvalue_t;
+
+typedef struct _hentry_t
 {
-    int ttype;
-    int tsize;
-    struct _type_t *tchild;
-}   type_t;
+    const char *key;
+    hvalue_t value;
+    struct _hentry_t *next;
+}   hentry_t;
 
-typedef struct _node_t
+typedef struct _htable_t
 {
-    const char *name;
-    struct _type_t type;
-    struct _node_t *next;
-}   node_t;
+    u32_t size;
+    hentry_t **pentry;
+}   htable_t;
 
-extern node_t *insert_node(const char *name, type_t *type);
-extern node_t *find_node(const char *name);
+extern htable_t *htable_new(u32_t size);
+extern void htable_delete(htable_t *htable);
+extern hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t value);
+extern hentry_t *htable_find(htable_t *htable, const char *key);
 
 #endif /* E6_30_H */

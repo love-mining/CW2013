@@ -35,7 +35,7 @@ void    return KEYWORD_VOID;
 while   return KEYWORD_WHILE;
 
 [a-zA-Z]+   yylval.str = strdup(yytext); return MISC_ID;
- /* [_a-zA-Z][a-zA-Z]*  yylval.str = strdup(yytext); return MISC_ID; */
+ /* [_a-zA-Z][_a-zA-Z]*  yylval.str = strdup(yytext); return MISC_ID; */
 
 [0-9]+  yylval.num = strtoul(yytext, NULL, 10); return MISC_NUM;
  /* [\+\-]?[0-9]+   yylval.num = strtol(yytext, NULL, 10); return MISC_NUM; */
@@ -63,7 +63,7 @@ while   return KEYWORD_WHILE;
 
 \/\*    BEGIN(ANSI_C_COMMENT);
 [ \n\t]+    /* eat whitespaces */ 
-[^a-zA-Z0-9 \n\t\+\-\*\/\<\=\>\!\;\,\(\)\[\]\{\}]+ yyerror("unknown token.");
+[^a-zA-Z0-9 \n\t\+\-\*\/\<\=\>\!\;\,\(\)\[\]\{\}]+ yyerror("unknown token."); 
 
 }
 

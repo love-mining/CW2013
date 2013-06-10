@@ -87,8 +87,14 @@ declaration:
 
 var_declaration:
     type_specifier MISC_ID SYMBOL_SEMICOLON
+    {
+    
+    }
     | type_specifier MISC_ID SYMBOL_SQUARE_L MISC_NUM SYMBOL_SQUARE_R
         SYMBOL_SEMICOLON
+    {
+    
+    }
     ;
 
 type_specifier:

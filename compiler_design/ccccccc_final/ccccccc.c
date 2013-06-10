@@ -10,7 +10,6 @@
 #include "ccccccc.yy.h"
 #include "ccccccc.tab.h"
 #include "ccccccc.h"
-#include "ccccccc.h"
 
 static char *input_filename = NULL;
 
@@ -18,6 +17,68 @@ int yyerror(char *msg)
 {
     errx(1, "line %d of %s: '%s': Error: %s", yyget_lineno(), input_filename, yytext, msg);
     return 0;
+}
+
+/* well i'm too lazy to start a new file hashtable.c.. */
+
+static inline u32_t elfhash(const char *s)
+{
+    u32_t h = 0;
+    while (*s)
+    {
+        h = (h << 4) + *s++;
+        
+        u32_t g = h >> 24;
+        if (g)
+            h ^= g;
+        h &= 0x00FFFFFF;
+    }
+    return h;
+}
+
+htable_t *htable_new(u32_t size)
+{
+    htable_t *ret = malloc(sizeof(htable_t));
+    ret->size = size;
+    ret->pentry = calloc(size, sizeof(hentry_t*));
+    return ret;
+}
+
+hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t value)
+{
+    hentry_t *entry = htable_find(htable, key);
+    if (entry)
+        return NULL;
+        
+    u32_t hkey = elfhash(key) % htable->size;
+    entry = malloc(sizeof(hentry_t));
+    entry->key = strdup(key);
+    entry->value = value;
+    entry->next = htable->pentry[hkey];
+    htable->pentry[hkey] = entry;
+    return entry;
+}
+
+hentry_t *htable_find(htable_t *htable, const char *key)
+{
+    u32_t hkey = elfhash(key) % htable->size;
+    hentry_t *entry = htable->pentry[hkey];
+    while (entry && strcmp(entry->key, key))
+        entry = entry->next;
+    return entry;
+}
+
+void htable_delete(htable_t *htable)
+{
+    /* TODO: free the table and all entries cascadingly */
+#if 0
+    int i;
+    for (i = 0; i < htable->size; i++)
+        hentry_free(htable->pentry[i]);
+#endif
+    free(htable->pentry);
+    free(htable);
+    return;
 }
 
 int main(int argc, char **argv)
@@ -41,48 +102,4 @@ int main(int argc, char **argv)
     return 0;
 }
 
-/* well i'm too lazy to start a new file hashtable.c.. */
-
-static inline u32_t elfhash(const char *s)
-{
-    u32_t h = 0;
-    while (*s)
-    {
-        h = (h << 4) + *s++;
-        
-        u32_t g = h >> 24;
-        if (g)
-            h ^= g;
-        h &= 0x00FFFFFF;
-    }
-    return h;
-}
-
-#define TSIZE 100007
-static node_t *htable[TSIZE];
-
-node_t *insert_node(const char *name, type_t *type)
-{
-    node_t *node = find_node(name);
-    if (node)
-        return ERRPTR;
-        
-    u32_t key = elfhash(name) % TSIZE;
-    node = malloc(sizeof(node_t));
-    node->name = strdup(name);
-    node->type = *type;
-    node->next = htable[key];
-    htable[key] = node;
-
-    return node;
-}
-
-node_t *find_node(const char *name)
-{
-    u32_t key = elfhash(name) % TSIZE;
-    node_t *node = htable[key];
-    while (node && strcmp(node->name, name))
-        node = node->next;
-    return node;
-}
 
