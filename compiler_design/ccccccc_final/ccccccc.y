@@ -1,6 +1,6 @@
 %{
 /* 
- * This is part of the coursework for Compiler Design, 2013.05_06 
+ * This is part of the coursework for Compiler Design, 2013.05-06 
  * by Pengyu CHEN (cpy.prefers.you[at]gmail.com)
  * COPYLEFT, ALL WRONGS RESERVED.
  */
@@ -20,12 +20,15 @@
 
 %token <str>
     KEYWORD_ELSE KEYWORD_IF KEYWORD_INT KEYWORD_RETURN KEYWORD_VOID KEYWORD_WHILE
-    MISC_ID MISC_NUM
+    MISC_ID
 
     SYMBOL_ADD SYMBOL_SUB SYMBOL_MUL SYMBOL_DIV SYMBOL_LT SYMBOL_LEQ SYMBOL_GT
     SYMBOL_GEQ SYMBOL_EEQL SYMBOL_NEQ SYMBOL_EQL 
     SYMBOL_SEMICOLON SYMBOL_COMMA SYMBOL_PARENTHESIS_L SYMBOL_PARENTHESIS_R
     SYMBOL_SQUARE_L SYMBOL_SQUARE_R SYMBOL_BRACKET_L SYMBOL_BRACKET_R
+
+%token <num>
+    MISC_NUM
 
 %type <str>
     program
@@ -163,7 +166,7 @@ expression:
 
 var:
     MISC_ID
-    | MISC_ID SYMBOL_SQUARE_L SYMBOL_SQUARE_R
+    | MISC_ID SYMBOL_SQUARE_L expression SYMBOL_SQUARE_R
     ;
 
 simple_expression:
@@ -172,7 +175,7 @@ simple_expression:
     ;
 
 relop:
-    SYMBOL_LEQ SYMBOL_LT SYMBOL_GT SYMBOL_GEQ SYMBOL_EEQL SYMBOL_NEQ ;
+    SYMBOL_LEQ | SYMBOL_LT | SYMBOL_GT | SYMBOL_GEQ | SYMBOL_EEQL | SYMBOL_NEQ ;
 
 additive_expression:
     additive_expression addop term
@@ -180,7 +183,7 @@ additive_expression:
     ;
 
 addop:
-    SYMBOL_ADD SYMBOL_SUB ;
+    SYMBOL_ADD | SYMBOL_SUB ;
 
 term:
     term mulop factor
@@ -188,7 +191,7 @@ term:
     ;
 
 mulop:
-    SYMBOL_MUL SYMBOL_DIV ;
+    SYMBOL_MUL | SYMBOL_DIV ;
 
 factor:
     SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R

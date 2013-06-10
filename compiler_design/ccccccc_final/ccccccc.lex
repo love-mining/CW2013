@@ -72,7 +72,9 @@ while   return KEYWORD_WHILE;
 {
 
 \*\/    BEGIN(INITIAL);
-.+  ;   /* just ignore it */
+\*  ; /* ignore it */
+[^\*]+  ;   /* ignore it */
+
 
 }
 
