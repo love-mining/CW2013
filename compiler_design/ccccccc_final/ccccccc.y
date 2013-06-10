@@ -30,8 +30,38 @@
 %token <num>
     MISC_NUM
 
-%type <>
-
+/*
+%type <str>
+    program
+    declaration_list
+    declaration
+    var_declaration
+    type_specifier
+    fun_declaration
+    params
+    param_list
+    param
+    compound_stmt
+    locla_declarations
+    statement_list
+    statement
+    expression_stmt
+    selection_stmt
+    iteration_stmt
+    return_stmt
+    expression
+    var
+    simple_expression
+    relop
+    additive_expression
+    addop
+    term
+    mulop
+    factor
+    call
+    args
+    arg_list
+*/
 
 %start all
 
