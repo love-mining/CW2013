@@ -37,14 +37,14 @@ while   return KEYWORD_WHILE;
 [a-zA-Z]+   yylval.str = strdup(yytext); return MISC_ID;
  /* [_a-zA-Z][a-zA-Z]*  yylval.str = strdup(yytext); return MISC_ID; */
 
-[0-9]+  puts(yytext); yylval.num = strtoul(yytext, NULL, 10); return MISC_NUM;
+[0-9]+  yylval.num = strtoul(yytext, NULL, 10); return MISC_NUM;
  /* [\+\-]?[0-9]+   yylval.num = strtol(yytext, NULL, 10); return MISC_NUM; */
 
 \+  return SYMBOL_ADD;
 \-  return SYMBOL_SUB;
 \*  return SYMBOL_MUL;
 \/  return SYMBOL_DIV;
-\<  return SYMBOL_LE;
+\<  return SYMBOL_LT;
 \<\=    return SYMBOL_LEQ;
 \>  return SYMBOL_GT;
 \>\=    return SYMBOL_GEQ;

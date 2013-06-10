@@ -11,8 +11,8 @@ YACC = bison
 
 LGFLAGS = 
 CCFLAGS = -O2 -c
-LEXFLAGS =
-YACCFLAGS = -d
+LEXFLAGS = --verbose
+YACCFLAGS = -d --verbose --debug
 
 # override the buildin rules by GNU make
 %.c: %.y
