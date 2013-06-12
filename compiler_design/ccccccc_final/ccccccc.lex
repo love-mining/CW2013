@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "ccccccc.tab.h"
+#include "ccccccc.h"
 
 #ifndef NULL
 #define NULL ((void*)0)
@@ -29,10 +30,10 @@
 
 else    return KEYWORD_ELSE;
 if      return KEYWORD_IF;
-int     return KEYWORD_INT;
 return  return KEYWORD_RETURN;
-void    return KEYWORD_VOID;
 while   return KEYWORD_WHILE;
+int     yylval.num = TYPE_INT; return KEYWORD_INT;
+void    yylval.num = TYPE_VOID; return KEYWORD_VOID;
 
 [a-zA-Z]+   yylval.str = strdup(yytext); return MISC_ID;
  /* [_a-zA-Z][_a-zA-Z]*  yylval.str = strdup(yytext); return MISC_ID; */

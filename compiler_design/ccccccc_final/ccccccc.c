@@ -5,6 +5,7 @@
  */
 
 #include <err.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include "ccccccc.yy.h"
@@ -13,7 +14,17 @@
 
 static char *input_filename = NULL;
 
-int yyerror(char *msg)
+int parsing_error(const char *msg, ...)
+{
+    va_list ap;
+    va_start(ap, msg);
+    char *fmt;
+    asprintf(&fmt, "line %d of %s: Error: %s", yyget_lineno(), input_filename, msg);
+    verrx(1, fmt, ap);
+    return 0;
+}
+
+int yyerror(const char *msg)
 {
     errx(1, "line %d of %s: '%s': Error: %s", yyget_lineno(), input_filename, yytext, msg);
     return 0;
@@ -42,11 +53,11 @@ htable_t *htable_new(u32_t size)
     return ret;
 }
 
-hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t value)
+hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t *value)
 {
     hentry_t *entry = htable_find(htable, key);
-    if (entry)
-        return NULL;
+    //if (entry)
+    //    return NULL;
         
     u32_t hkey = elfhash(key) % htable->size;
     entry = malloc(sizeof(hentry_t));
@@ -79,17 +90,19 @@ void htable_delete(htable_t *htable)
     return;
 }
 
-static local_env_t _global_env = {NULL, NULL};
+static local_env_t _global_env = {NULL, NULL, 0};
 local_env_t *global_env = &_global_env;
+local_env_t *current_env = &_global_env;
 
 static inline init(int argc, char **argv)
 {
     if (argc != 2 || (argc > 1 && !strcmp(argv[1], "-h"))) 
-        err(-1, "Usage: %s inputfile\n", argv[0]);
+        err(1, "Usage: %s inputfile\n", argv[0]);
     input_filename = argv[1];
     yyin = fopen(input_filename, "r");
     if (!yyin)
-        err(-1, "cannot open file %s for input", input_filename);
+        err(1, "cannot open file %s for input", input_filename);
+
     global_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
 
     return;

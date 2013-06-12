@@ -4,11 +4,12 @@
  * by Pengyu CHEN (cpy.prefers.you[at]gmail.com)
  * COPYLEFT, ALL WRONGS RESERVED.
  */
- 
+
+#include <string.h>
+#include <stdlib.h>
+
 //#include "ccccccc.yy.h"
-#ifndef NULL
-#define NULL ((void*)0)
-#endif
+#include "ccccccc.h"
 
 %}
 
@@ -19,7 +20,7 @@
 }
 
 %token <str>
-    KEYWORD_ELSE KEYWORD_IF KEYWORD_INT KEYWORD_RETURN KEYWORD_VOID KEYWORD_WHILE
+    KEYWORD_ELSE KEYWORD_IF KEYWORD_RETURN KEYWORD_WHILE 
     MISC_ID
 
     SYMBOL_ADD SYMBOL_SUB SYMBOL_MUL SYMBOL_DIV SYMBOL_LT SYMBOL_LEQ SYMBOL_GT
@@ -28,15 +29,15 @@
     SYMBOL_SQUARE_L SYMBOL_SQUARE_R SYMBOL_BRACKET_L SYMBOL_BRACKET_R
 
 %token <num>
-    MISC_NUM
+    MISC_NUM KEYWORD_INT KEYWORD_VOID
 
 %type <str>
     program
     declaration_list
     declaration
     var_declaration
-    type_specifier
     fun_declaration
+    fun_prototype
     params
     param_list
     param
@@ -62,6 +63,8 @@
     arg_list
     empty
 
+%type <num>
+    type_specifier
 
 %right STMT_IF KEYWORD_ELSE
 
@@ -88,12 +91,28 @@ declaration:
 var_declaration:
     type_specifier MISC_ID SYMBOL_SEMICOLON
     {
-    
+        var_t *var = malloc(sizeof(var_t));
+        var->name = strdup($2);
+        var->type = $1;
+        var->arraysz = -1;
+        var->offset = current_env->varsz;
+        current_env->varsz += 1;
+        if (!htable_insert(current_env->symbol_table, $2, var))
+            parsing_error("identifier '%s' already exists.", $2);
     }
     | type_specifier MISC_ID SYMBOL_SQUARE_L MISC_NUM SYMBOL_SQUARE_R
         SYMBOL_SEMICOLON
     {
-    
+        if ($1 == TYPE_VOID)
+            parsing_error("'void' type cannot make up arrays.");
+        var_t *var = malloc(sizeof(var_t));
+        var->name = strdup($2);
+        var->type = $1;
+        var->arraysz = $4;
+        var->offset = current_env->varsz;
+        current_env->varsz += $4;
+        if (!htable_insert(current_env->symbol_table, $2, var))
+            parsing_error("identifier '%s' already exists.", $2);
     }
     ;
 
@@ -103,8 +122,17 @@ type_specifier:
     ;
 
 fun_declaration:
+    fun_prototype compound_stmt
+    {
+        puts("ffffffffffffunc");
+    }
+    ;
+
+fun_prototype:
     type_specifier MISC_ID SYMBOL_PARENTHESIS_L params SYMBOL_PARENTHESIS_R 
-        compound_stmt
+    {
+        puts("pppppppprototype");
+    }
     ;
 
 params:
@@ -124,6 +152,9 @@ param:
 
 compound_stmt:
     SYMBOL_BRACKET_L local_declarations statement_list SYMBOL_BRACKET_R
+    {
+        puts("ssssssssstmt");
+    }
     ;
 
 local_declarations:

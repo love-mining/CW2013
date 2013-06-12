@@ -6,9 +6,9 @@ inplace code generation
 [2]: arithmetic source t
 [3]: tmp
 [4]: tmp
-[5]: stack pointer
-[6]: local env base
-[7]: program counter
+[5]: stack pointer / initial: sbrk()
+[6]: local env base / initial: sbrk()
+[7]: program counter / initial: 0
 
 2. calling convention:
 cdecl-like.
