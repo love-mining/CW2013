@@ -19,8 +19,6 @@ int yyerror(char *msg)
     return 0;
 }
 
-/* well i'm too lazy to start a new file hashtable.c.. */
-
 static inline u32_t elfhash(const char *s)
 {
     u32_t h = 0;
@@ -81,18 +79,26 @@ void htable_delete(htable_t *htable)
     return;
 }
 
-int main(int argc, char **argv)
+static local_env_t _global_env = {NULL, NULL};
+local_env_t *global_env = &_global_env;
+
+static inline init(int argc, char **argv)
 {
     if (argc != 2 || (argc > 1 && !strcmp(argv[1], "-h"))) 
-    {
-        printf("Usage: %s inputfile\n", argv[0]);
-        return 0;
-    }
+        err(-1, "Usage: %s inputfile\n", argv[0]);
     input_filename = argv[1];
     yyin = fopen(input_filename, "r");
     if (!yyin)
-         err(-1, "cannot open file %s for input", input_filename);
-    
+        err(-1, "cannot open file %s for input", input_filename);
+    global_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
+
+    return;
+}
+
+int main(int argc, char **argv)
+{
+    init(argc, argv);
+   
     /* start the parsing process */
     yyparse();
 

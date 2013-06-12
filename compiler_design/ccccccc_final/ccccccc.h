@@ -8,6 +8,9 @@
 #define E6_30_H
 
 #define ERRPTR ((void*)-1)
+
+#define CONFIG_HTABLE_SIZE  1007
+
 enum
 {
     STATUS_FAILED,
@@ -18,6 +21,7 @@ typedef unsigned int u32_t;
 typedef unsigned long u64_t;
 typedef int i32_t;
 typedef long long i64_t;
+typedef u32_t ptr_t;
 
 typedef void *hvalue_t;
 
@@ -34,9 +38,17 @@ typedef struct _htable_t
     hentry_t **pentry;
 }   htable_t;
 
+typedef struct _local_env_t
+{
+    struct _local_env_t *parent;
+    htable_t *symbol_table;
+}   local_env_t;
+
 extern htable_t *htable_new(u32_t size);
 extern void htable_delete(htable_t *htable);
 extern hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t value);
 extern hentry_t *htable_find(htable_t *htable, const char *key);
+
+extern local_env_t *global_env;
 
 #endif /* E6_30_H */
