@@ -55,9 +55,14 @@ enum
     TYPE_NONE = -1,
 };
 
+enum
+{
+    SYMBOL_VAR,
+    SYMBOL_FUNC,
+};
+
 typedef struct _var_t
 {
-    char *name;
     int type;
     int arraysz;
     int offset;
@@ -65,10 +70,29 @@ typedef struct _var_t
 
 typedef struct _param_t
 {
-    int sz;
-    int offset;
-    struct _var_t *var;
+    char *name;
+    int type;
+    int arraysz;
+    struct _param_t *next;
 }   param_t;
+
+typedef struct _func_t
+{
+    int type;
+    int paramsz;
+    struct _var_t *param;
+}   func_t;
+
+typedef struct _symbol_t
+{
+    char *name;
+    int type;
+    union
+    {
+        struct _var_t var;
+        struct _func_t func;
+    };
+}   symbol_t;
 
 extern int parsing_error(const char *msg, ...);
 extern htable_t *htable_new(u32_t size);
@@ -79,4 +103,4 @@ extern hentry_t *htable_find(htable_t *htable, const char *key);
 extern local_env_t *global_env;
 extern local_env_t *current_env;
 
-#endif /* E6_30_H */
+#endif /* CCCCCCC_H */

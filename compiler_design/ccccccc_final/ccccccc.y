@@ -17,6 +17,8 @@
 {
     char *str;
     long num;
+    struct _func_t *func;
+    struct _param_t *param;
 }
 
 %token <str>
@@ -38,9 +40,6 @@
     var_declaration
     fun_declaration
     fun_prototype
-    params
-    param_list
-    param
     compound_stmt
     local_declarations
     statement_list
@@ -65,6 +64,13 @@
 
 %type <num>
     type_specifier
+
+%type <func>
+    params
+    param_list
+
+%type <param>
+    param
 
 %right STMT_IF KEYWORD_ELSE
 
@@ -91,13 +97,15 @@ declaration:
 var_declaration:
     type_specifier MISC_ID SYMBOL_SEMICOLON
     {
-        var_t *var = malloc(sizeof(var_t));
-        var->name = strdup($2);
+        symbol_t *symbol = malloc(sizeof(symbol_t));
+        symbol->name = strdup($2);
+        symbol->type = SYMBOL_VAR;
+        var_t *var = &symbol->var;
         var->type = $1;
         var->arraysz = -1;
         var->offset = current_env->varsz;
         current_env->varsz += 1;
-        if (!htable_insert(current_env->symbol_table, $2, var))
+        if (!htable_insert(current_env->symbol_table, $2, symbol))
             parsing_error("identifier '%s' already exists.", $2);
     }
     | type_specifier MISC_ID SYMBOL_SQUARE_L MISC_NUM SYMBOL_SQUARE_R
@@ -105,13 +113,15 @@ var_declaration:
     {
         if ($1 == TYPE_VOID)
             parsing_error("'void' type cannot make up arrays.");
-        var_t *var = malloc(sizeof(var_t));
-        var->name = strdup($2);
+        symbol_t *symbol = malloc(sizeof(symbol_t));
+        symbol->name = strdup($2);
+        symbol->type = SYMBOL_VAR;
+        var_t *var = &symbol->var;
         var->type = $1;
         var->arraysz = $4;
         var->offset = current_env->varsz;
         current_env->varsz += $4;
-        if (!htable_insert(current_env->symbol_table, $2, var))
+        if (!htable_insert(current_env->symbol_table, $2, symbol))
             parsing_error("identifier '%s' already exists.", $2);
     }
     ;
@@ -131,23 +141,68 @@ fun_declaration:
 fun_prototype:
     type_specifier MISC_ID SYMBOL_PARENTHESIS_L params SYMBOL_PARENTHESIS_R 
     {
-        puts("pppppppprototype");
+        symbol_t *symbol = malloc(sizeof(symbol_t));
+        symbol->name = strdup($2);
+        symbol->type = SYMBOL_FUNC;
+        func_t *func = &symbol->func;
+        func->type = $1;
+        func->paramsz = $4->paramsz;
+        func->param = $4->param;
+        if (!htable_insert(current_env->symbol_table, $2, symbol))
+            parsing_error("identifier '%s' already exists.", $2);
+        free($4);
     }
     ;
 
 params:
     param_list 
     | KEYWORD_VOID
+    {
+        func_t *func = malloc(sizeof(func_t));
+        func->type = TYPE_VOID;
+        func->paramsz = 0;
+        func->param = NULL;
+        $1 = func;
+    }
     ;
 
 param_list:
     param_list SYMBOL_COMMA param 
+    {
+        $1->paramsz += 1;
+        $3->next = $1->param;
+        $1->param = $3;
+        $$ = $1;
+    }
     | param
+    {
+        func_t *func = malloc(sizeof(func));
+        func->type = TYPE_NONE;
+        func->paramsz = 1;
+        func->param = $1;
+        $$ = func;
+    }
     ;
 
 param:
     type_specifier MISC_ID
+    {
+        param_t *param = malloc(sizeof(param_t));
+        param->name = strdup($2);
+        param->type = $1;
+        param->arraysz = -1;
+        param->next = NULL;
+        $$ = param;
+    }
     | type_specifier MISC_ID SYMBOL_SQUARE_L SYMBOL_SQUARE_R
+    {
+        param_t *param = malloc(sizeof(param_t));
+        param->name = strdup($2);
+        param->type = $1;
+        param->arraysz = 0;
+        param->next = NULL;
+        $$ = param;
+    }
     ;
 
 compound_stmt:

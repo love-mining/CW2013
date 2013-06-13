@@ -56,8 +56,8 @@ htable_t *htable_new(u32_t size)
 hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t *value)
 {
     hentry_t *entry = htable_find(htable, key);
-    //if (entry)
-    //    return NULL;
+    if (entry)
+        return NULL;
         
     u32_t hkey = elfhash(key) % htable->size;
     entry = malloc(sizeof(hentry_t));
