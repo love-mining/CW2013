@@ -141,6 +141,7 @@ fun_declaration:
 fun_prototype:
     type_specifier MISC_ID SYMBOL_PARENTHESIS_L params SYMBOL_PARENTHESIS_R 
     {
+        puts("1");
         symbol_t *symbol = malloc(sizeof(symbol_t));
         symbol->name = strdup($2);
         symbol->type = SYMBOL_FUNC;
@@ -151,6 +152,15 @@ fun_prototype:
         if (!htable_insert(current_env->symbol_table, $2, symbol))
             parsing_error("identifier '%s' already exists.", $2);
         free($4);
+
+        puts("2");
+        /* replace the global env using a local one */
+        local_env_t *new_env = malloc(sizeof(local_env_t));
+        new_env->parent = current_env;
+        new_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
+        new_env->varsz = 0;
+        current_env = new_env;
+        puts("3");
     }
     ;
 
@@ -162,7 +172,7 @@ params:
         func->type = TYPE_VOID;
         func->paramsz = 0;
         func->param = NULL;
-        $1 = func;
+        $$ = func;
     }
     ;
 

@@ -90,7 +90,7 @@ void htable_delete(htable_t *htable)
     return;
 }
 
-static local_env_t _global_env = {NULL, NULL, 0};
+static local_env_t _global_env;
 local_env_t *global_env = &_global_env;
 local_env_t *current_env = &_global_env;
 
@@ -103,7 +103,9 @@ static inline init(int argc, char **argv)
     if (!yyin)
         err(1, "cannot open file %s for input", input_filename);
 
+    global_env->parent = NULL;
     global_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
+    global_env->varsz = 0;
 
     return;
 }
