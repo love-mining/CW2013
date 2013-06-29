@@ -13,11 +13,27 @@
 #endif
 
 #define CONFIG_HTABLE_SIZE  1007
+#define CONFIG_CODE_BUF_SIZE    1024
+#define CONFIG_CODE_START_OFFSET    32
+#define CONFIG_INPUT_OFFSET 8
+#define CONFIG_OUTPUT_OFFSET    13
 
 enum
 {
     STATUS_FAILED,
     STATUS_SUCCEEDED,
+};
+
+enum
+{
+    REG_TMP0 = 0,
+    REG_TMP1 = 1,
+    REG_TMP2 = 2,
+    REG_TMP3 = 3,
+    REG_RES0 = 4,
+    REG_STACK_PTR = 5,
+    REG_FRAME_PTR = 6,
+    REG_PCOUNTER = 7,
 };
 
 typedef unsigned int u32_t;
@@ -45,6 +61,7 @@ typedef struct _local_env_t
 {
     struct _local_env_t *parent;
     htable_t *symbol_table;
+    int base;
     int varsz;
 }   local_env_t;
 
@@ -79,8 +96,9 @@ typedef struct _param_t
 typedef struct _func_t
 {
     int type;
+    int offset;
     int paramsz;
-    struct _var_t *param;
+    struct _param_t *param;
 }   func_t;
 
 typedef struct _symbol_t
@@ -102,5 +120,9 @@ extern hentry_t *htable_find(htable_t *htable, const char *key);
 
 extern local_env_t *global_env;
 extern local_env_t *current_env;
+
+extern int gen_comment_buffered(const char *fmt, ...);
+extern int gen_code_buffered_RO(const char *opcode, int r, int s, int t);
+extern int gen_code_buffered_RM(const char *opcode, int r, int d, int s);
 
 #endif /* CCCCCCC_H */

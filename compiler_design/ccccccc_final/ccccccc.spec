@@ -16,8 +16,7 @@ arguements are passed sequentially through the stack.
 return value in reg[0] if any
 callee cleans the stack
 register reservations after function invokation:
-[0]: reserved
-[1]-[3]: not reserved
+[0]-[3]: not reserved
 [4]-[7]: reserved
 
 3. stack layout:
@@ -27,12 +26,16 @@ register reservations after function invokation:
 params
 return address
 --current:
+stored stack pointer
+stored frame pointer
 locals
 temps
 ...
 params
 return address
 --next:
+stored stack pointer
+stored frame pointer
 locals
 temps
 ...

@@ -5,6 +5,7 @@
  * COPYLEFT, ALL WRONGS RESERVED.
  */
 
+#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -40,6 +41,7 @@
     var_declaration
     fun_declaration
     fun_prototype
+    compound_stmt_stage1
     compound_stmt
     local_declarations
     statement_list
@@ -134,33 +136,73 @@ type_specifier:
 fun_declaration:
     fun_prototype compound_stmt
     {
-        puts("ffffffffffffunc");
+        assert(current_env->parent);
+        current_env = current_env->parent;
+ 
+        /* generate codes for funcs */
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 0, REG_FRAME_PTR);
+        gen_code_buffered_RM("LD", REG_FRAME_PTR, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDC", REG_TMP0, 0, 0);
+        gen_code_buffered_RM("LD", REG_TMP1, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("JEQ", REG_TMP0, 0, REG_TMP1);
     }
     ;
 
 fun_prototype:
     type_specifier MISC_ID SYMBOL_PARENTHESIS_L params SYMBOL_PARENTHESIS_R 
     {
-        puts("1");
+        /* generate codes for funcs */
+        int func_offset = gen_comment_buffered("* func: %s", $2);
+        gen_code_buffered_RM("ST", REG_FRAME_PTR, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_FRAME_PTR, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
+
+        /* symbol table insertion */
         symbol_t *symbol = malloc(sizeof(symbol_t));
         symbol->name = strdup($2);
         symbol->type = SYMBOL_FUNC;
         func_t *func = &symbol->func;
         func->type = $1;
+        func->offset = func_offset;
         func->paramsz = $4->paramsz;
         func->param = $4->param;
         if (!htable_insert(current_env->symbol_table, $2, symbol))
             parsing_error("identifier '%s' already exists.", $2);
         free($4);
 
-        puts("2");
         /* replace the global env using a local one */
         local_env_t *new_env = malloc(sizeof(local_env_t));
         new_env->parent = current_env;
         new_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
-        new_env->varsz = 0;
+        new_env->base = 0;
+        new_env->varsz = 1; /* we've already have pused FRAME_PTR */
         current_env = new_env;
-        puts("3");
+
+        /* insert params to local env */
+        param_t *param;
+        for (param = func->param; param; param = param->next)
+        {
+            var_t *var = malloc(sizeof(var_t));
+            var->type = param->type;
+            var->arraysz = param->arraysz;
+            var->offset = current_env->varsz; 
+            if (var->arraysz <= 0) /* int or array pointer */
+                current_env->varsz += 1;
+            else
+                current_env->varsz += var->arraysz;
+            if (!htable_insert(current_env->symbol_table, param->name, var))
+                parsing_error("identifier '%s' already exists.", param->name);
+        }
+        
+        gen_comment_buffered("* copying parameters");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, current_env->varsz - 1, REG_STACK_PTR);
+        int i;
+        for (i = current_env->varsz - 1; i > 0; i--)
+        {
+            gen_code_buffered_RM("LD", REG_TMP0, -1 * i, REG_FRAME_PTR);
+            gen_code_buffered_RM("ST", REG_TMP0, -1 * i + 1, REG_STACK_PTR);
+        }
+        gen_comment_buffered("* end of copying parameters");
     }
     ;
 
@@ -191,6 +233,7 @@ param_list:
         func->paramsz = 1;
         func->param = $1;
         $$ = func;
+        gen_comment_buffered("* param: %s", $1->name);
     }
     ;
 
@@ -215,10 +258,24 @@ param:
     }
     ;
 
-compound_stmt:
-    SYMBOL_BRACKET_L local_declarations statement_list SYMBOL_BRACKET_R
+compound_stmt_stage1:
+    SYMBOL_BRACKET_L 
     {
-        puts("ssssssssstmt");
+        /* replace the global env using a local one */
+        local_env_t *new_env = malloc(sizeof(local_env_t));
+        new_env->parent = current_env;
+        new_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
+        new_env->base = current_env->base + current_env->varsz;
+        new_env->varsz = current_env->varsz;
+        current_env = new_env;
+    }
+    ;
+
+compound_stmt:
+    compound_stmt_stage1 local_declarations statement_list SYMBOL_BRACKET_R
+    {
+        assert(current_env->parent);
+        current_env = current_env->parent;
     }
     ;
 
@@ -304,6 +361,27 @@ factor:
 
 call:
     MISC_ID SYMBOL_PARENTHESIS_L args SYMBOL_PARENTHESIS_R 
+    {
+        /* maybe some checking first... */
+        hentry_t *hfunc = htable_find(global_env->symbol_table, $1);
+        if (!hfunc)
+            parsing_error("undefined identifier: %s", $1);
+        symbol_t *sfunc = hfunc->value;
+        assert(sfunc);
+        if (sfunc->type != SYMBOL_FUNC)
+            parsing_error("target not callable: %s", $1);
+
+        /* TODO: check parameter type */
+        //assert(sfunc->func.type == TYPE_VOID);
+        //assert(sfunc->func.paramsz == 0);
+
+        gen_comment_buffered("* prepare for func call: %s", $1);
+        gen_code_buffered_RM("LDC", REG_TMP0, 0, 0);
+        gen_code_buffered_RM("LDA", REG_TMP1, 3, REG_PCOUNTER);
+        gen_code_buffered_RM("ST", REG_TMP1, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
+        gen_code_buffered_RM("JEQ", REG_TMP0, sfunc->func.offset, REG_TMP0);
+    }
     ;
 
 args:
