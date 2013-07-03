@@ -1,7 +1,7 @@
 int fib(int n)
 {
     output(n);
-    return fib(n);
+    return fib(n*11);
 }
 
 void main(void)

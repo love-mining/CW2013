@@ -398,6 +398,14 @@ addop:
 
 term:
     term mulop factor
+    {
+        gen_comment_buffered("* term");
+        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP1, -2, REG_STACK_PTR);
+        gen_code_buffered_RO($2 == SYMBOL_MUL ? "MUL" : "DIV", REG_TMP1, REG_TMP1, REG_TMP0);
+        gen_code_buffered_RM("ST", REG_TMP1, -2, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+    }
     | factor
     ;
 
@@ -419,6 +427,12 @@ factor:
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
     }
     | MISC_NUM
+    {
+        gen_comment_buffered("* load instance value");
+        gen_code_buffered_RM("LDC", REG_TMP0, $1, 0);
+        gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
+    }
     ;
 
 call:
