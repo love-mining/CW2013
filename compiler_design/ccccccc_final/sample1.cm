@@ -1,8 +1,15 @@
+int fib(int n)
+{
+    output(n);
+    return fib(n);
+}
+
 void main(void)
 {
     int a;
     int b;
     a = input();
+    fib(a);
     b = input();
     output(a + b);
     return;

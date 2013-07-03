@@ -86,6 +86,7 @@ hentry_t *htable_find_local(local_env_t *env, const char *key)
         entry = htable_find(env->symbol_table, key);
         if (entry)
             break;
+        env = env->parent;
     }
     return entry;
 }

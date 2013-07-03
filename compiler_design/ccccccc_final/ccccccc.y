@@ -142,12 +142,13 @@ fun_declaration:
         assert(current_env->parent);
         current_env = current_env->parent;
  
-        /* generate codes for funcs */
+        /* generate codes for function exits */
+        gen_comment_buffered("* exiting function");
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 0, REG_FRAME_PTR);
         gen_code_buffered_RM("LD", REG_FRAME_PTR, 0, REG_STACK_PTR);
-        gen_code_buffered_RM("LDC", REG_TMP0, 0, 0);
-        gen_code_buffered_RM("LD", REG_TMP1, -1, REG_STACK_PTR);
-        gen_code_buffered_RM("JEQ", REG_TMP0, 0, REG_TMP1);
+        gen_code_buffered_RM("LDC", REG_TMP1, 0, 0);
+        gen_code_buffered_RM("LD", REG_TMP2, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("JEQ", REG_TMP1, 0, REG_TMP2);
     }
     ;
 
@@ -185,7 +186,10 @@ fun_prototype:
         param_t *param;
         for (param = func->param; param; param = param->next)
         {
-            var_t *var = malloc(sizeof(var_t));
+            symbol_t *symbol = malloc(sizeof(symbol_t));
+            symbol->type = SYMBOL_VAR;
+            symbol->name = strdup(param->name);
+            var_t *var = &symbol->var;
             var->type = param->type;
             var->arraysz = param->arraysz;
             var->offset = current_env->varsz + current_env->base; 
@@ -193,17 +197,17 @@ fun_prototype:
                 current_env->varsz += 1;
             else
                 current_env->varsz += var->arraysz;
-            if (!htable_insert(current_env->symbol_table, param->name, var))
+            if (!htable_insert(current_env->symbol_table, param->name, symbol))
                 parsing_error("identifier '%s' already exists.", param->name);
         }
         
         gen_comment_buffered("* copying parameters");
-        gen_code_buffered_RM("LDA", REG_STACK_PTR, current_env->varsz - 1, REG_STACK_PTR);
         int i;
-        for (i = current_env->varsz - 1; i > 0; i--)
+        for (i = current_env->varsz; i > 0; i--)
         {
-            gen_code_buffered_RM("LD", REG_TMP0, -1 * i, REG_FRAME_PTR);
-            gen_code_buffered_RM("ST", REG_TMP0, -1 * i + 1, REG_STACK_PTR);
+            gen_code_buffered_RM("LD", REG_TMP0, - i, REG_FRAME_PTR);
+            gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
+            gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
         }
         gen_comment_buffered("* end of copying parameters");
     }
@@ -318,7 +322,26 @@ iteration_stmt:
 
 return_stmt:
     KEYWORD_RETURN SYMBOL_SEMICOLON
+    {
+        /* generate codes for function exits */
+        gen_comment_buffered("* exiting function");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 0, REG_FRAME_PTR);
+        gen_code_buffered_RM("LD", REG_FRAME_PTR, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDC", REG_TMP1, 0, 0);
+        gen_code_buffered_RM("LD", REG_TMP2, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("JEQ", REG_TMP1, 0, REG_TMP2);
+    }
     | KEYWORD_RETURN expression SYMBOL_SEMICOLON
+    {
+        /* generate codes for function exits */
+        gen_comment_buffered("* exiting function");
+        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_FRAME_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 0, REG_FRAME_PTR);
+        gen_code_buffered_RM("LD", REG_FRAME_PTR, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDC", REG_TMP1, 0, 0);
+        gen_code_buffered_RM("LD", REG_TMP2, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("JEQ", REG_TMP1, 0, REG_TMP2);
+    }
     ;
 
 expression:
