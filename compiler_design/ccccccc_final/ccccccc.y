@@ -20,6 +20,7 @@
     long num;
     struct _func_t *func;
     struct _param_t *param;
+    struct _var_t *var;
 }
 
 %token <str>
@@ -51,7 +52,6 @@
     iteration_stmt
     return_stmt
     expression
-    var
     simple_expression
     relop
     additive_expression
@@ -73,6 +73,9 @@
 
 %type <param>
     param
+
+%type <var>
+    var
 
 %right STMT_IF KEYWORD_ELSE
 
@@ -320,11 +323,29 @@ return_stmt:
 
 expression:
     var SYMBOL_EQL expression
+    {
+        gen_comment_buffered("* assignment");
+        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("ST", REG_TMP0, $1->offset, REG_FRAME_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+    }
     | simple_expression
     ;
 
 var:
     MISC_ID
+    {
+        hentry_t *hvar = htable_find_local(current_env, $1);
+        if (!hvar)
+            parsing_error("undefined identifier: %s", $1);
+        symbol_t *svar = hvar->value;
+        assert(svar);
+        if (svar->type != SYMBOL_VAR)
+            parsing_error("target is not a variable: %s", $1);
+        var_t *var = malloc(sizeof(var_t));
+        var->offset = svar->var.offset;
+        $$ = var;
+    }
     | MISC_ID SYMBOL_SQUARE_L expression SYMBOL_SQUARE_R
     ;
 
@@ -355,6 +376,12 @@ mulop:
 factor:
     SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R
     | var
+    {
+        gen_comment_buffered("* load variable");
+        gen_code_buffered_RM("LD", REG_TMP0, $1->offset, REG_FRAME_PTR);
+        gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
+    }
     | call
     {
         gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
@@ -385,6 +412,19 @@ call:
         gen_code_buffered_RM("ST", REG_TMP1, 0, REG_STACK_PTR);
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
         gen_code_buffered_RM("JEQ", REG_TMP0, sfunc->func.offset, REG_TMP0);
+
+        /* clean the stack after invokation */
+        gen_comment_buffered("* cleaning stack after func call: %s", $1);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+        param_t *param;
+        for (param = sfunc->func.param; param; param = param->next)
+        {
+            assert(param->arraysz != 0);
+            if (param->arraysz == -1)
+                gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+            else
+                gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+        }
     }
     ;
 
