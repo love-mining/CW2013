@@ -67,6 +67,8 @@
     relop
     addop
     mulop
+    selection_stmt_stage1
+    selection_stmt_stage2
 
 %type <func>
     params
@@ -290,9 +292,9 @@ compound_stmt:
     compound_stmt_stage2 statement_list SYMBOL_BRACKET_R
     {
         assert(current_env->parent);
-        current_env = current_env->parent;
         gen_comment_buffered("* leave compound stmt");
         gen_code_buffered_RM("LDA", REG_STACK_PTR, -current_env->varsz, REG_STACK_PTR);
+        current_env = current_env->parent;
     }
     ;
 
@@ -316,14 +318,61 @@ statement:
 
 expression_stmt:
     expression SYMBOL_SEMICOLON
+    {
+        gen_comment_buffered("* expression_stmt: to balance stack pointer");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+    }
     | SYMBOL_SEMICOLON
     ;
 
+selection_stmt_stage1:
+    KEYWORD_IF SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R
+    {
+        gen_comment_buffered("* begin of if");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP0, 0, REG_STACK_PTR);
+        /* to be refilled later */
+        $$ = get_code_cursor();
+        gen_code_buffered_RM("LDA", REG_TMP1, 0, REG_TMP1);
+        gen_code_buffered_RM("JEQ", REG_TMP0, -1, -1); 
+    }
+    ;
+
+selection_stmt_stage2:
+    selection_stmt_stage1 statement
+    {
+        /* for later fill back */
+        $$ = get_code_cursor();
+        gen_code_buffered_RM("LDA", REG_TMP0, 0, REG_TMP0);
+        gen_code_buffered_RM("LDA", REG_TMP0, 0, REG_TMP0);
+        gen_code_buffered_RM("LDA", REG_TMP0, 0, REG_TMP0);
+
+        /* fill back */
+        int offset = gen_comment_buffered("* end of if");
+        int cursor = set_code_cursor($1);
+        gen_code_buffered_RM("LDC", REG_TMP1, offset, 0);
+        gen_code_buffered_RM("JEQ", REG_TMP0, 0, REG_TMP1); 
+        set_code_cursor(cursor);
+
+        gen_comment_buffered("* begin of else");
+    }
+    ;
+
 selection_stmt:
-    KEYWORD_IF SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R statement
-        %prec STMT_IF
-    | KEYWORD_IF SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R statement
-        KEYWORD_ELSE statement
+    selection_stmt_stage2 %prec STMT_IF
+    {
+        gen_comment_buffered("* end of else");
+    }
+    | selection_stmt_stage2 KEYWORD_ELSE statement
+    {
+        /* fill back */
+        int offset = gen_comment_buffered("* end of else");
+        int cursor = set_code_cursor($1);
+        gen_code_buffered_RM("LDC", REG_TMP0, 0, 0);
+        gen_code_buffered_RM("LDC", REG_TMP1, offset, 0);
+        gen_code_buffered_RM("JEQ", REG_TMP0, 0, REG_TMP1); 
+        set_code_cursor(cursor);
+    }
     ;
 
 iteration_stmt:
@@ -360,7 +409,6 @@ expression:
         gen_comment_buffered("* assignment");
         gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
         gen_code_buffered_RM("ST", REG_TMP0, $1->offset, REG_FRAME_PTR);
-        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
     }
     | simple_expression
     ;

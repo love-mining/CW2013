@@ -10,6 +10,9 @@ void main(void)
     int b;
     a = input();
     b = input();
-    output(a > b);
+    if (a > b)
+        output(a);
+    if (b > a)
+        output(b);
     return;
 }

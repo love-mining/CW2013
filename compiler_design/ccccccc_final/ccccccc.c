@@ -112,6 +112,20 @@ static unsigned codebufsz;
 static unsigned codesz;
 static int codeoffset;
 static char **codebuf;
+static int codehead;
+
+int get_code_cursor()
+{
+    return codesz;
+}
+
+int set_code_cursor(int cursor)
+{
+    assert(cursor < codebufsz);
+    int ret = codesz;
+    codesz = cursor;
+    return ret;
+}
 
 static int gen_code_buffered(const char *code, int comment)
 {
@@ -120,11 +134,30 @@ static int gen_code_buffered(const char *code, int comment)
         codebuf[codesz] = strdup(code);
     else 
     {
-        asprintf(&codebuf[codesz], "%d: %s", codeoffset, code);
-        codeoffset += 1;
+        if (codehead == codesz) /* normal code */
+        {
+            asprintf(&codebuf[codesz], "%d: %s", codeoffset, code);
+            codeoffset += 1;
+        }
+        else /* fillback code */
+        {
+            char *tmp;
+            asprintf(
+                &tmp, 
+                "%.*s: %s", 
+                strchr(codebuf[codesz], ':') - codebuf[codesz], 
+                codebuf[codesz], 
+                code
+            );
+            free(codebuf[codesz]);
+            codebuf[codesz] = tmp;
+        }
+
     }
     assert(codebuf[codesz]);
     codesz += 1;
+    if (codesz > codehead)
+        codehead = codesz;
     if (codesz >= codebufsz)
     {
         codebufsz *= 2;

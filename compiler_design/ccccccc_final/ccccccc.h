@@ -122,6 +122,8 @@ extern hentry_t *htable_find_local(local_env_t *env, const char *key);
 extern local_env_t *global_env;
 extern local_env_t *current_env;
 
+extern int get_code_cursor();
+extern int set_code_cursor(int cursor);
 extern int gen_comment_buffered(const char *fmt, ...);
 extern int gen_code_buffered_RO(const char *opcode, int r, int s, int t);
 extern int gen_code_buffered_RM(const char *opcode, int r, int d, int s);
