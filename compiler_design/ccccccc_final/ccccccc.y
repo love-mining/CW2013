@@ -425,12 +425,13 @@ var:
     MISC_ID
     {
         hentry_t *hvar = NULL;
-        while (current_env)
+        local_env_t *tmp_env = current_env;
+        while (tmp_env)
         {
-            hvar = htable_find(current_env->symbol_table, $1);
+            hvar = htable_find(tmp_env->symbol_table, $1);
             if (hvar)
                 break;
-            current_env = current_env->parent;
+            tmp_env = tmp_env->parent;
         }
         if (!hvar)
             parsing_error("undefined identifier: %s", $1);
@@ -444,6 +445,27 @@ var:
         $$ = var;
     }
     | MISC_ID SYMBOL_SQUARE_L expression SYMBOL_SQUARE_R
+    {
+        hentry_t *hvar = NULL;
+        local_env_t *tmp_env = current_env;
+        while (tmp_env)
+        {
+            hvar = htable_find(tmp_env->symbol_table, $1);
+            if (hvar)
+                break;
+            tmp_env = tmp_env->parent;
+        }
+        if (!hvar)
+            parsing_error("undefined identifier: %s", $1);
+        symbol_t *svar = hvar->value;
+        assert(svar);
+        if (svar->type != SYMBOL_VAR)
+            parsing_error("target is not a variable: %s", $1);
+        var_t *var = malloc(sizeof(var_t));
+        var->offset = svar->var.offset + $3;
+        var->type = current_env->parent ? TYPE_LOCAL : TYPE_GLOBAL;
+        $$ = var;
+    }
     ;
 
 simple_expression:
