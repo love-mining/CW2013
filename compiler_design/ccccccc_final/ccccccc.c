@@ -78,19 +78,6 @@ hentry_t *htable_find(htable_t *htable, const char *key)
     return entry;
 }
 
-hentry_t *htable_find_local(local_env_t *env, const char *key)
-{
-    hentry_t *entry = NULL;
-    while (env && env->parent)
-    {
-        entry = htable_find(env->symbol_table, key);
-        if (entry)
-            break;
-        env = env->parent;
-    }
-    return entry;
-}
-
 void htable_delete(htable_t *htable)
 {
     /* TODO: free the table and all entries cascadingly */

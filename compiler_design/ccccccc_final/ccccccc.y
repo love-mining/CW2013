@@ -408,7 +408,15 @@ expression:
     {
         gen_comment_buffered("* assignment");
         gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
-        gen_code_buffered_RM("ST", REG_TMP0, $1->offset, REG_FRAME_PTR);
+        if ($1->type & TYPE_LOCAL)
+            gen_code_buffered_RM("ST", REG_TMP0, $1->offset, REG_FRAME_PTR);
+        else if ($1->type && TYPE_GLOBAL)
+        {
+            gen_code_buffered_RM("LDC", REG_TMP1, $1->offset, 0);
+            gen_code_buffered_RM("ST", REG_TMP0, 0, REG_TMP1);
+        }
+        else
+            assert(0);
     }
     | simple_expression
     ;
@@ -416,7 +424,14 @@ expression:
 var:
     MISC_ID
     {
-        hentry_t *hvar = htable_find_local(current_env, $1);
+        hentry_t *hvar = NULL;
+        while (current_env)
+        {
+            hvar = htable_find(current_env->symbol_table, $1);
+            if (hvar)
+                break;
+            current_env = current_env->parent;
+        }
         if (!hvar)
             parsing_error("undefined identifier: %s", $1);
         symbol_t *svar = hvar->value;
@@ -425,6 +440,7 @@ var:
             parsing_error("target is not a variable: %s", $1);
         var_t *var = malloc(sizeof(var_t));
         var->offset = svar->var.offset;
+        var->type = current_env->parent ? TYPE_LOCAL : TYPE_GLOBAL;
         $$ = var;
     }
     | MISC_ID SYMBOL_SQUARE_L expression SYMBOL_SQUARE_R
@@ -495,7 +511,15 @@ factor:
     | var
     {
         gen_comment_buffered("* load variable");
-        gen_code_buffered_RM("LD", REG_TMP0, $1->offset, REG_FRAME_PTR);
+        if ($1->type & TYPE_LOCAL)
+            gen_code_buffered_RM("LD", REG_TMP0, $1->offset, REG_FRAME_PTR);
+        else if ($1->type && TYPE_GLOBAL)
+        {
+            gen_code_buffered_RM("LDC", REG_TMP1, $1->offset, 0);
+            gen_code_buffered_RM("LD", REG_TMP0, 0, REG_TMP1);
+        }
+        else
+            assert(0);
         gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
     }

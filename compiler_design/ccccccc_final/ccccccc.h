@@ -70,6 +70,8 @@ enum
     TYPE_VOID,
     TYPE_INT,
     TYPE_NONE = -1,
+    TYPE_GLOBAL = 1<<16,
+    TYPE_LOCAL = 1<<17,
 };
 
 enum
@@ -117,7 +119,6 @@ extern htable_t *htable_new(u32_t size);
 extern void htable_delete(htable_t *htable);
 extern hentry_t *htable_insert(htable_t *htable, const char *key, hvalue_t *value);
 extern hentry_t *htable_find(htable_t *htable, const char *key);
-extern hentry_t *htable_find_local(local_env_t *env, const char *key);
 
 extern local_env_t *global_env;
 extern local_env_t *current_env;
