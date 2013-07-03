@@ -356,6 +356,10 @@ factor:
     SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R
     | var
     | call
+    {
+        gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
+    }
     | MISC_NUM
     ;
 
