@@ -43,6 +43,7 @@
     fun_declaration
     fun_prototype
     compound_stmt_stage1
+    compound_stmt_stage2
     compound_stmt
     local_declarations
     statement_list
@@ -273,16 +274,25 @@ compound_stmt_stage1:
         new_env->parent = current_env;
         new_env->symbol_table = htable_new(CONFIG_HTABLE_SIZE);
         new_env->base = current_env->base + current_env->varsz;
-        new_env->varsz = current_env->varsz;
+        new_env->varsz = 0;
         current_env = new_env;
     }
     ;
 
+compound_stmt_stage2:
+    compound_stmt_stage1 local_declarations 
+    {
+        gen_comment_buffered("* enter compound stmt");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, current_env->varsz, REG_STACK_PTR);
+    }
+    ;
 compound_stmt:
-    compound_stmt_stage1 local_declarations statement_list SYMBOL_BRACKET_R
+    compound_stmt_stage2 statement_list SYMBOL_BRACKET_R
     {
         assert(current_env->parent);
         current_env = current_env->parent;
+        gen_comment_buffered("* leave compound stmt");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -current_env->varsz, REG_STACK_PTR);
     }
     ;
 
@@ -374,6 +384,26 @@ var:
 
 simple_expression:
     additive_expression relop additive_expression
+    {
+        static const char *i2j[] = {
+            [SYMBOL_LEQ] = "JLE",
+            [SYMBOL_LT] = "JLT",
+            [SYMBOL_GT] = "JGT",
+            [SYMBOL_GEQ] = "JGE",
+            [SYMBOL_EEQL] = "JEQ",
+            [SYMBOL_NEQ] = "JNE",
+        };
+        gen_comment_buffered("* relop ");
+        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP1, -2, REG_STACK_PTR);
+        gen_code_buffered_RO("SUB", REG_TMP1, REG_TMP1, REG_TMP0);
+        gen_code_buffered_RM("LDC", REG_TMP0, 1, 0);
+        gen_code_buffered_RM(i2j[$2], REG_TMP1, 1, REG_PCOUNTER);
+        gen_code_buffered_RM("LDC", REG_TMP0, 0, 0);
+        gen_code_buffered_RM("ST", REG_TMP0, -2, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+    
+    }
     | additive_expression
     ;
 
@@ -383,7 +413,7 @@ relop:
 additive_expression:
     additive_expression addop term
     {
-        gen_comment_buffered("* additive_expression");
+        gen_comment_buffered("* addop");
         gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
         gen_code_buffered_RM("LD", REG_TMP1, -2, REG_STACK_PTR);
         gen_code_buffered_RO($2 == SYMBOL_ADD ? "ADD" : "SUB", REG_TMP1, REG_TMP1, REG_TMP0);
@@ -399,7 +429,7 @@ addop:
 term:
     term mulop factor
     {
-        gen_comment_buffered("* term");
+        gen_comment_buffered("* mulop");
         gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
         gen_code_buffered_RM("LD", REG_TMP1, -2, REG_STACK_PTR);
         gen_code_buffered_RO($2 == SYMBOL_MUL ? "MUL" : "DIV", REG_TMP1, REG_TMP1, REG_TMP0);
