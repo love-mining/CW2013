@@ -53,11 +53,8 @@
     return_stmt
     expression
     simple_expression
-    relop
     additive_expression
-    addop
     term
-    mulop
     factor
     call
     args
@@ -66,6 +63,9 @@
 
 %type <num>
     type_specifier
+    relop
+    addop
+    mulop
 
 %type <func>
     params
@@ -108,7 +108,7 @@ var_declaration:
         var_t *var = &symbol->var;
         var->type = $1;
         var->arraysz = -1;
-        var->offset = current_env->varsz;
+        var->offset = current_env->varsz + current_env->base;
         current_env->varsz += 1;
         if (!htable_insert(current_env->symbol_table, $2, symbol))
             parsing_error("identifier '%s' already exists.", $2);
@@ -124,7 +124,7 @@ var_declaration:
         var_t *var = &symbol->var;
         var->type = $1;
         var->arraysz = $4;
-        var->offset = current_env->varsz;
+        var->offset = current_env->varsz + current_env->base;
         current_env->varsz += $4;
         if (!htable_insert(current_env->symbol_table, $2, symbol))
             parsing_error("identifier '%s' already exists.", $2);
@@ -188,7 +188,7 @@ fun_prototype:
             var_t *var = malloc(sizeof(var_t));
             var->type = param->type;
             var->arraysz = param->arraysz;
-            var->offset = current_env->varsz; 
+            var->offset = current_env->varsz + current_env->base; 
             if (var->arraysz <= 0) /* int or array pointer */
                 current_env->varsz += 1;
             else
@@ -359,6 +359,14 @@ relop:
 
 additive_expression:
     additive_expression addop term
+    {
+        gen_comment_buffered("* additive_expression");
+        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP1, -2, REG_STACK_PTR);
+        gen_code_buffered_RO($2 == SYMBOL_ADD ? "ADD" : "SUB", REG_TMP1, REG_TMP1, REG_TMP0);
+        gen_code_buffered_RM("ST", REG_TMP1, -2, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+    }
     | term
     ;
 

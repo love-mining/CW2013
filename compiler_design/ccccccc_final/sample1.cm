@@ -1,8 +1,9 @@
 void main(void)
 {
     int a;
+    int b;
     a = input();
-    output(a);
-    output(input());
+    b = input();
+    output(a + b);
     return;
 }

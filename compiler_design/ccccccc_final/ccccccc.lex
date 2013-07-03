@@ -41,25 +41,25 @@ void    yylval.num = TYPE_VOID; return KEYWORD_VOID;
 [0-9]+  yylval.num = strtoul(yytext, NULL, 10); return MISC_NUM;
  /* [\+\-]?[0-9]+   yylval.num = strtol(yytext, NULL, 10); return MISC_NUM; */
 
-\+  return SYMBOL_ADD;
-\-  return SYMBOL_SUB;
-\*  return SYMBOL_MUL;
-\/  return SYMBOL_DIV;
-\<  return SYMBOL_LT;
-\<\=    return SYMBOL_LEQ;
-\>  return SYMBOL_GT;
-\>\=    return SYMBOL_GEQ;
-\=\=    return SYMBOL_EEQL;
-\!\=    return SYMBOL_NEQ;
-\=  return SYMBOL_EQL;
-\;  return SYMBOL_SEMICOLON;
-\,  return SYMBOL_COMMA;
-\(  return SYMBOL_PARENTHESIS_L;
-\)  return SYMBOL_PARENTHESIS_R;
-\[  return SYMBOL_SQUARE_L;
-\]  return SYMBOL_SQUARE_R;
-\{  return SYMBOL_BRACKET_L;
-\}  return SYMBOL_BRACKET_R;
+\+  return yylval.num = SYMBOL_ADD;
+\-  return yylval.num = SYMBOL_SUB;
+\*  return yylval.num = SYMBOL_MUL;
+\/  return yylval.num = SYMBOL_DIV;
+\<  return yylval.num = SYMBOL_LT;
+\<\=    return yylval.num = SYMBOL_LEQ;
+\>  return yylval.num = SYMBOL_GT;
+\>\=    return yylval.num = SYMBOL_GEQ;
+\=\=    return yylval.num = SYMBOL_EEQL;
+\!\=    return yylval.num = SYMBOL_NEQ;
+\=  return yylval.num = SYMBOL_EQL;
+\;  return yylval.num = SYMBOL_SEMICOLON;
+\,  return yylval.num = SYMBOL_COMMA;
+\(  return yylval.num = SYMBOL_PARENTHESIS_L;
+\)  return yylval.num = SYMBOL_PARENTHESIS_R;
+\[  return yylval.num = SYMBOL_SQUARE_L;
+\]  return yylval.num = SYMBOL_SQUARE_R;
+\{  return yylval.num = SYMBOL_BRACKET_L;
+\}  return yylval.num = SYMBOL_BRACKET_R;
 
 
 \/\*    BEGIN(ANSI_C_COMMENT);
