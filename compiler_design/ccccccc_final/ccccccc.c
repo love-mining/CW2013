@@ -269,10 +269,10 @@ int main(int argc, char **argv)
     const int main_return = 7;
     dump_code("* initialization");
     dump_code("0: LDC  0, 0(0)");
-    dump_code("1: LDC  %d, %d(0) * stack pointer", REG_STACK_PTR, 1);
-    dump_code("2: LDC  %d, 0(0)  * frame pointer", REG_FRAME_PTR);
+    dump_code("1: LDC  %d, %d(0) * stack pointer", REG_STACK_PTR, 1 + global_env->varsz);
+    dump_code("2: LDC  %d, %d(0)  * frame pointer", REG_FRAME_PTR, global_env->varsz);
     dump_code("3: LDC  1, %d(0) * return address", main_return);
-    dump_code("4: ST   1, 0(0)  * return address");
+    dump_code("4: ST   1, 0(%d)  * return address", REG_FRAME_PTR);
     dump_code("5: LDC  1, %d(0) * main entrance", smain->func.offset);
     dump_code("6: JEQ  0, 0(1)  * jump to main");
     dump_code("7: HALT 0, 0, 0");

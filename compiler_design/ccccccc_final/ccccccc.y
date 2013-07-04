@@ -198,25 +198,26 @@ fun_prototype:
         /* insert params to local env */
         param_t *param;
         for (param = func->param; param; param = param->next)
-        {
-            symbol_t *symbol = malloc(sizeof(symbol_t));
-            symbol->type = SYMBOL_VAR;
-            symbol->name = strdup(param->name);
-            var_t *var = &symbol->var;
-            var->type = param->type;
-            var->arraysz = param->arraysz;
-            var->offset = current_env->varsz + current_env->base; 
-            if (var->arraysz <= 0) /* int or array pointer */
-                current_env->varsz += 1;
-            else
-                current_env->varsz += var->arraysz;
-            if (!htable_insert(current_env->symbol_table, param->name, symbol))
-                parsing_error("identifier '%s' already exists.", param->name);
-        }
+            if (param->type != TYPE_VOID)
+            {
+                symbol_t *symbol = malloc(sizeof(symbol_t));
+                symbol->type = SYMBOL_VAR;
+                symbol->name = strdup(param->name);
+                var_t *var = &symbol->var;
+                var->type = param->type;
+                var->arraysz = param->arraysz;
+                var->offset = current_env->varsz + current_env->base; 
+                if (var->arraysz <= 0) /* int or array pointer */
+                    current_env->varsz += 1;
+                else
+                    current_env->varsz += var->arraysz;
+                if (!htable_insert(current_env->symbol_table, param->name, symbol))
+                    parsing_error("identifier '%s' already exists.", param->name);
+            }
         
         gen_comment_buffered("* copying parameters");
         int i;
-        for (i = current_env->varsz; i > 0; i--)
+        for (i = current_env->varsz; i > 1; i--)
         {
             gen_code_buffered_RM("LD", REG_TMP0, - i, REG_FRAME_PTR);
             gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
@@ -435,7 +436,7 @@ return_stmt:
     {
         /* generate codes for function exits */
         gen_comment_buffered("* exiting function");
-        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_FRAME_PTR);
+        gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 0, REG_FRAME_PTR);
         gen_code_buffered_RM("LD", REG_FRAME_PTR, 0, REG_STACK_PTR);
         gen_code_buffered_RM("LDC", REG_TMP1, 0, 0);
@@ -502,6 +503,7 @@ var:
         if (svar->type != SYMBOL_VAR)
             parsing_error("target is not a variable: %s", $1);
         var_t *var = malloc(sizeof(var_t));
+        var->offset = svar->var.offset;
         if (current_env->parent)
             gen_code_buffered_RM("LDA", REG_TMP1, var->offset, REG_FRAME_PTR);
         else
