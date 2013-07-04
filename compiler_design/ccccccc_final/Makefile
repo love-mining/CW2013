@@ -20,7 +20,10 @@ YACCFLAGS = -d --verbose --debug
 
 .PHONY: wc clean
 
-all: ccccccc
+all: ccccccc tm
+
+tm: tm.c
+	$(CC) tm.c -o tm
 
 ccccccc: ccccccc.tab.o ccccccc.yy.o ccccccc.o
 	$(LD) $(LDFLAGS) -o ccccccc ccccccc.tab.o ccccccc.yy.o ccccccc.o
@@ -44,6 +47,6 @@ wc:
 	wc ccccccc.y ccccccc.lex ccccccc.c
 
 clean:
-	rm -f ccccccc ccccccc.tab.o ccccccc.yy.o ccccccc.tab.c ccccccc.tab.h ccccccc.yy.c ccccccc.yy.h ccccccc.o
+	rm -f tm ccccccc ccccccc.tab.o ccccccc.yy.o ccccccc.tab.c ccccccc.tab.h ccccccc.yy.c ccccccc.yy.h ccccccc.o
 
 
