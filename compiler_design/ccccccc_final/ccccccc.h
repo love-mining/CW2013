@@ -70,8 +70,6 @@ enum
     TYPE_VOID,
     TYPE_INT,
     TYPE_NONE = -1,
-    TYPE_GLOBAL = 1<<16,
-    TYPE_LOCAL = 1<<17,
 };
 
 enum

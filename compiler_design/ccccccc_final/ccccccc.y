@@ -12,6 +12,11 @@
 //#include "ccccccc.yy.h"
 #include "ccccccc.h"
 
+typedef struct _int2_t
+{
+    int x;
+    int y;
+}   int2_t;
 %}
 
 %union /* typedef of yylval */
@@ -21,7 +26,7 @@
     struct _func_t *func;
     struct _param_t *param;
     struct _var_t *var;
-    int int2[2];
+    struct _int2_t *int2;
 }
 
 %token <str>
@@ -395,13 +400,23 @@ iteration_stmt_stage2:
         int tmp = get_code_cursor();
         gen_code_buffered_RM("LDA", REG_TMP1, 0, REG_TMP1);
         gen_code_buffered_RM("JEQ", REG_TMP0, -1, -1); 
-        $$[0] = $1;
-        $$[1] = tmp;
+        $$ = malloc(sizeof(int2_t));
+        $$->x = $1;
+        $$->y = tmp;
     }
     ;
 iteration_stmt:
     iteration_stmt_stage2 statement
     {
+        gen_code_buffered_RM("LDC", REG_TMP0, 0, 0);
+        gen_code_buffered_RM("LDC", REG_TMP1, $1->x, 0);
+        gen_code_buffered_RM("JEQ", REG_TMP0, 0, REG_TMP1); 
+        /* fill back */
+        int offset = gen_comment_buffered("* end of while");
+        int cursor = set_code_cursor($1->y);
+        gen_code_buffered_RM("LDC", REG_TMP1, offset, 0);
+        gen_code_buffered_RM("JEQ", REG_TMP0, 0, REG_TMP1); 
+        set_code_cursor(cursor);
     }
     ;
 
@@ -434,7 +449,9 @@ expression:
     {
         gen_comment_buffered("* assignment");
         gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP1, -2, REG_STACK_PTR);
         gen_code_buffered_RM("ST", REG_TMP0, 0, REG_TMP1);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
     }
     | simple_expression
     ;
@@ -463,6 +480,8 @@ var:
             gen_code_buffered_RM("LDA", REG_TMP1, var->offset, REG_FRAME_PTR);
         else
             gen_code_buffered_RM("LDC", REG_TMP1, var->offset, 0);
+        gen_code_buffered_RM("ST", REG_TMP1, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
         $$ = var;
     }
     | MISC_ID SYMBOL_SQUARE_L expression SYMBOL_SQUARE_R
@@ -490,7 +509,8 @@ var:
         gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
         gen_code_buffered_RM("LD", REG_TMP0, 0, REG_STACK_PTR);
         gen_code_buffered_RO("ADD", REG_TMP1, REG_TMP1, REG_TMP0);
-
+        gen_code_buffered_RM("ST", REG_TMP1, 0, REG_STACK_PTR);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
         $$ = var;
     }
     ;
@@ -560,6 +580,8 @@ factor:
     | var
     {
         gen_comment_buffered("* load variable");
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP1, 0, REG_STACK_PTR);
         gen_code_buffered_RM("LD", REG_TMP0, 0, REG_TMP1);
         gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);

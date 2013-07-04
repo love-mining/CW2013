@@ -203,6 +203,7 @@ static inline init(int argc, char **argv)
     codeoffset = CONFIG_CODE_START_OFFSET;
     codebufsz = CONFIG_CODE_BUF_SIZE;
     codebuf = malloc(sizeof(char*) * codebufsz);
+    codehead = 0;
 
     /* symbol table insertion */
 
