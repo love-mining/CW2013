@@ -21,6 +21,7 @@
     struct _func_t *func;
     struct _param_t *param;
     struct _var_t *var;
+    int int2[2];
 }
 
 %token <str>
@@ -69,6 +70,10 @@
     mulop
     selection_stmt_stage1
     selection_stmt_stage2
+    iteration_stmt_stage1
+
+%type <int2>
+    iteration_stmt_stage2
 
 %type <func>
     params
@@ -375,8 +380,29 @@ selection_stmt:
     }
     ;
 
+iteration_stmt_stage1:
+    KEYWORD_WHILE SYMBOL_PARENTHESIS_L 
+    {
+        $$ = gen_comment_buffered("* begin of while");
+    }
+    ;
+iteration_stmt_stage2:
+    iteration_stmt_stage1 expression SYMBOL_PARENTHESIS_R 
+    {
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP0, 0, REG_STACK_PTR);
+        /* to be refilled later */
+        int tmp = get_code_cursor();
+        gen_code_buffered_RM("LDA", REG_TMP1, 0, REG_TMP1);
+        gen_code_buffered_RM("JEQ", REG_TMP0, -1, -1); 
+        $$[0] = $1;
+        $$[1] = tmp;
+    }
+    ;
 iteration_stmt:
-    KEYWORD_WHILE SYMBOL_PARENTHESIS_L expression SYMBOL_PARENTHESIS_R statement
+    iteration_stmt_stage2 statement
+    {
+    }
     ;
 
 return_stmt:
@@ -408,15 +434,7 @@ expression:
     {
         gen_comment_buffered("* assignment");
         gen_code_buffered_RM("LD", REG_TMP0, -1, REG_STACK_PTR);
-        if ($1->type & TYPE_LOCAL)
-            gen_code_buffered_RM("ST", REG_TMP0, $1->offset, REG_FRAME_PTR);
-        else if ($1->type && TYPE_GLOBAL)
-        {
-            gen_code_buffered_RM("LDC", REG_TMP1, $1->offset, 0);
-            gen_code_buffered_RM("ST", REG_TMP0, 0, REG_TMP1);
-        }
-        else
-            assert(0);
+        gen_code_buffered_RM("ST", REG_TMP0, 0, REG_TMP1);
     }
     | simple_expression
     ;
@@ -441,7 +459,10 @@ var:
             parsing_error("target is not a variable: %s", $1);
         var_t *var = malloc(sizeof(var_t));
         var->offset = svar->var.offset;
-        var->type = current_env->parent ? TYPE_LOCAL : TYPE_GLOBAL;
+        if (current_env->parent)
+            gen_code_buffered_RM("LDA", REG_TMP1, var->offset, REG_FRAME_PTR);
+        else
+            gen_code_buffered_RM("LDC", REG_TMP1, var->offset, 0);
         $$ = var;
     }
     | MISC_ID SYMBOL_SQUARE_L expression SYMBOL_SQUARE_R
@@ -462,8 +483,14 @@ var:
         if (svar->type != SYMBOL_VAR)
             parsing_error("target is not a variable: %s", $1);
         var_t *var = malloc(sizeof(var_t));
-        var->offset = svar->var.offset + $3;
-        var->type = current_env->parent ? TYPE_LOCAL : TYPE_GLOBAL;
+        if (current_env->parent)
+            gen_code_buffered_RM("LDA", REG_TMP1, var->offset, REG_FRAME_PTR);
+        else
+            gen_code_buffered_RM("LDC", REG_TMP1, var->offset, 0);
+        gen_code_buffered_RM("LDA", REG_STACK_PTR, -1, REG_STACK_PTR);
+        gen_code_buffered_RM("LD", REG_TMP0, 0, REG_STACK_PTR);
+        gen_code_buffered_RO("ADD", REG_TMP1, REG_TMP1, REG_TMP0);
+
         $$ = var;
     }
     ;
@@ -533,15 +560,7 @@ factor:
     | var
     {
         gen_comment_buffered("* load variable");
-        if ($1->type & TYPE_LOCAL)
-            gen_code_buffered_RM("LD", REG_TMP0, $1->offset, REG_FRAME_PTR);
-        else if ($1->type && TYPE_GLOBAL)
-        {
-            gen_code_buffered_RM("LDC", REG_TMP1, $1->offset, 0);
-            gen_code_buffered_RM("LD", REG_TMP0, 0, REG_TMP1);
-        }
-        else
-            assert(0);
+        gen_code_buffered_RM("LD", REG_TMP0, 0, REG_TMP1);
         gen_code_buffered_RM("ST", REG_TMP0, 0, REG_STACK_PTR);
         gen_code_buffered_RM("LDA", REG_STACK_PTR, 1, REG_STACK_PTR);
     }
